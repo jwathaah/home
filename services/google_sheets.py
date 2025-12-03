@@ -2,6 +2,7 @@ import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
+import json  # <--- إضافة مهمة
 
 # 1. إعداد الاتصال
 SCOPES = [
@@ -13,7 +14,15 @@ def get_connection():
     """إنشاء اتصال آمن مع Google Sheets"""
     try:
         if "google" in st.secrets and "service_account_json" in st.secrets["google"]:
-            creds_dict = st.secrets["google"]["service_account_json"]
+            creds_data = st.secrets["google"]["service_account_json"]
+            
+            # --- التصحيح الجديد: تحويل النص إلى JSON إذا لزم الأمر ---
+            if isinstance(creds_data, str):
+                creds_dict = json.loads(creds_data)
+            else:
+                creds_dict = creds_data
+            # -------------------------------------------------------
+
             creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
             client = gspread.authorize(creds)
             return client
@@ -38,7 +47,7 @@ def get_data(sheet_name):
 
 # 3. دالة الإضافة (Create)
 def add_row(sheet_name, row_data_list):
-    """إضافة صف جديد (يجب أن تكون البيانات قائمة List)"""
+    """إضافة صف جديد"""
     client = get_connection()
     if not client: return False
     try:
@@ -52,14 +61,12 @@ def add_row(sheet_name, row_data_list):
 
 # 4. دالة الحذف (Delete)
 def delete_row(sheet_name, id_column, id_value):
-    """حذف صف بناءً على قيمة المعرف (ID)"""
+    """حذف صف بناءً على قيمة المعرف"""
     client = get_connection()
     if not client: return False
     try:
         sh = client.open_by_key(st.secrets["google"]["spreadsheet_id"])
         ws = sh.worksheet(sheet_name)
-        
-        # البحث عن الخلية التي تحتوي على الـ ID
         cell = ws.find(str(id_value))
         if cell:
             ws.delete_rows(cell.row)
@@ -72,27 +79,20 @@ def delete_row(sheet_name, id_column, id_value):
 
 # 5. دالة التعديل (Update)
 def update_field(sheet_name, id_column, id_value, target_column, new_value):
-    """تحديث قيمة خلية واحدة محددة"""
+    """تحديث قيمة خلية واحدة"""
     client = get_connection()
     if not client: return False
     try:
         sh = client.open_by_key(st.secrets["google"]["spreadsheet_id"])
         ws = sh.worksheet(sheet_name)
-        
-        # البحث عن الصف
         cell = ws.find(str(id_value))
-        if not cell:
-            return False
-            
-        # البحث عن رقم العمود المستهدف
-        headers = ws.row_values(1) # الصف الأول هو العناوين
+        if not cell: return False
+        headers = ws.row_values(1)
         try:
-            col_index = headers.index(target_column) + 1 # +1 لأن gspread يبدأ من 1
+            col_index = headers.index(target_column) + 1
         except ValueError:
             st.error(f"العمود {target_column} غير موجود")
             return False
-            
-        # تحديث الخلية
         ws.update_cell(cell.row, col_index, new_value)
         return True
     except Exception as e:
