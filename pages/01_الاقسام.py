@@ -5,8 +5,8 @@ from models.permission_model import PermissionModel
 from core.auth import get_current_user
 from core.constants import ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_SUPERVISOR
 from utils.formatting import apply_custom_style
-from utils.media_embedder import render_social_media # <--- استدعاء المعالج الجديد
-from streamlit_quill import st_quill # <--- استدعاء المحرر المتطور
+from utils.media_embedder import render_social_media
+from streamlit_quill import st_quill
 
 # 1. إعداد الصفحة
 st.set_page_config(page_title="تصفح الأقسام", page_icon="📂", layout="wide")
@@ -18,11 +18,18 @@ if not user:
 
 apply_custom_style()
 
-# دوال الصلاحيات
+# --- دوال الصلاحيات المحدثة ---
+
+def is_super_admin():
+    """للتحقق من المدير العام فقط (للحذف)"""
+    return user.role_id == ROLE_SUPER_ADMIN
+
 def can_edit_structure():
+    """للإضافة والتعديل في الهيكل (مدير عام + مدير)"""
     return user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]
 
 def can_edit_content(section_id=None):
+    """للإضافة والتعديل في المحتوى (مدير عام + مدير + مشرف بصلاحية)"""
     if user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]: return True
     if user.role_id == ROLE_SUPERVISOR:
         can_view, can_edit = PermissionModel.check_access(user.user_id, section_id=section_id)
@@ -56,6 +63,7 @@ with st.sidebar:
 
     st.divider()
     
+    # الإضافة: متاحة للمدراء (Admin + Super Admin)
     if can_edit_structure():
         with st.expander("➕ إضافة قسم رئيسي"):
             with st.form("add_sec_sidebar"):
@@ -72,14 +80,18 @@ with st.sidebar:
 if selected_section:
     c1, c2 = st.columns([6, 1])
     c1.header(f"📂 {selected_section.name}")
-    if can_edit_structure():
+    
+    # الحذف: حصري للمدير العام فقط
+    if is_super_admin():
         if c2.button("🗑 حذف القسم", key=f"del_sec_{selected_section.section_id}"):
             SectionModel.delete_section(selected_section.section_id)
             st.rerun()
+            
     st.markdown("---")
 
     tabs = TabModel.get_tabs_by_section(selected_section.section_id)
 
+    # إضافة تبويب: متاحة للمدراء
     if can_edit_structure():
         with st.popover("➕ إضافة قسم فرعي (Tab)"):
             with st.form("add_tab_form"):
@@ -98,6 +110,7 @@ if selected_section:
             with st_tabs[i]:
                 categories = CategoryModel.get_categories_by_tab(tab.tab_id)
                 
+                # إضافة تصنيف: متاحة للمدراء
                 if can_edit_structure():
                     with st.expander("⚙️ إدارة التصنيفات"):
                         with st.form(f"add_cat_{tab.tab_id}"):
@@ -124,33 +137,30 @@ if selected_section:
                     # --- عرض المحتوى ---
                     st.markdown(f"### 🏷️ {selected_category.name}")
                     
-                    # نموذج الإضافة (مطور)
+                    # إضافة محتوى: متاحة لمن لديه صلاحية (Edit)
                     if can_edit_content(selected_section.section_id):
-                        with st.expander("📝 إضافة محتوى جديد (احترافي)", expanded=False):
+                        with st.expander("📝 إضافة محتوى جديد", expanded=False):
                             with st.form(f"add_cnt_{selected_category.category_id}"):
                                 ct_title = st.text_input("عنوان الخبر / المقال")
                                 
                                 st.write("نص المحتوى:")
-                                # استخدام المحرر المتطور Quill
-                                # يمكننا تحديد حجمه وشريط الأدوات
                                 ct_body = st_quill(
-                                    placeholder="اكتب المحتوى هنا بتنسيق احترافي...",
-                                    html=True, # لحفظ التنسيقات والألوان
+                                    placeholder="اكتب المحتوى هنا...",
+                                    html=True,
                                     key=f"quill_{selected_category.category_id}"
                                 )
                                 
                                 st.markdown("---")
-                                st.write("🔗 **إرفاق ميديا (يوتيوب، تويتر، تيك توك):**")
-                                social_link = st.text_input("ضع الرابط هنا وسيتم عرضه مباشرة", placeholder="https://www.youtube.com/watch?v=...")
+                                st.write("🔗 **إرفاق ميديا (يوتيوب، تويتر، تيك توك...):**")
+                                social_link = st.text_input("رابط الميديا", placeholder="https://...")
                                 
                                 if st.form_submit_button("نشر المحتوى"):
-                                    # نمرر الرابط في خانة social_link
                                     ContentModel.create_content(
                                         selected_category.category_id, 
-                                        "mixed", # نوع مختلط
+                                        "mixed", 
                                         ct_title, 
                                         body=ct_body, 
-                                        social_link=social_link, # حفظ الرابط
+                                        social_link=social_link,
                                         created_by=user.name
                                     )
                                     st.rerun()
@@ -165,15 +175,14 @@ if selected_section:
                                 c_tit, c_del = st.columns([6, 1])
                                 c_tit.markdown(f"### {item.title}")
                                 
-                                if can_edit_content(selected_section.section_id):
+                                # الحذف: حصري للمدير العام فقط
+                                if is_super_admin():
                                     if c_del.button("🗑", key=f"del_c_{item.content_id}"):
                                         ContentModel.delete_content(item.content_id)
                                         st.rerun()
                                 
-                                # عرض النص بتنسيقه الملون (HTML)
                                 st.markdown(item.body, unsafe_allow_html=True)
                                 
-                                # عرض السوشيال ميديا إذا وجد رابط
                                 if item.social_link:
                                     st.divider()
                                     render_social_media(item.social_link)
