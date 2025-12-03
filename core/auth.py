@@ -1,49 +1,81 @@
 import streamlit as st
+import extra_streamlit_components as stx
+from datetime import datetime, timedelta
 import hashlib
 from models.user_model import UserModel
+from models.session_model import SessionModel
+
+# إعداد مدير الكوكيز (يجب أن يكون خارج الدوال)
+def get_cookie_manager():
+    return stx.CookieManager()
 
 def hash_password(password):
-    """تشفير كلمة المرور (SHA256) لمطابقتها مع قاعدة البيانات"""
+    """تشفير كلمة المرور"""
     return hashlib.sha256(str.encode(password)).hexdigest()
 
 def login_user(email, password):
-    """
-    دالة تسجيل الدخول:
-    1. تبحث عن الايميل
-    2. تتأكد أن الحساب مفعل
-    3. تطابق كلمة المرور
-    4. تحفظ المستخدم في الجلسة (Session)
-    """
-    # جلب المستخدم وكلمة المرور المشفرة
-    user_obj, stored_hash = UserModel.get_user_by_email(email)
+    """تسجيل الدخول وإنشاء كوكيز لمدة 30 يوم"""
+    user, stored_hash = UserModel.get_user_by_email(email)
     
-    if not user_obj:
-        return False, "البريد الإلكتروني غير مسجل في النظام."
-    
-    if not user_obj.is_active:
-        return False, "هذا الحساب معطل (Inactive)، يرجى مراجعة المدير."
-        
-    # مطابقة الباسورد
-    input_hash = hash_password(password)
-    
-    if input_hash == stored_hash:
-        # نجاح الدخول: حفظ البيانات في متصفح المستخدم
-        st.session_state['logged_in'] = True
-        st.session_state['current_user'] = user_obj
-        return True, "تم تسجيل الدخول بنجاح!"
-    else:
-        return False, "كلمة المرور غير صحيحة."
+    if user and stored_hash == hash_password(password):
+        if user.is_active:
+            # 1. حفظ في الذاكرة المؤقتة
+            st.session_state['user'] = user
+            
+            # 2. إنشاء توكن جلسة وحفظه في القاعدة
+            token = SessionModel.create_session(user.user_id)
+            
+            # 3. حفظ التوكن في متصفح المستخدم (كوكيز) لمدة 30 يوم
+            cookie_manager = get_cookie_manager()
+            expires = datetime.now() + timedelta(days=30)
+            cookie_manager.set('auth_token', token, expires_at=expires)
+            
+            return True, "تم تسجيل الدخول بنجاح"
+        else:
+            return False, "هذا الحساب غير نشط"
+    return False, "البريد الإلكتروني أو كلمة المرور غير صحيحة"
 
 def logout_user():
-    """تسجيل الخروج ومسح البيانات من الذاكرة"""
-    if 'logged_in' in st.session_state:
-        del st.session_state['logged_in']
-    if 'current_user' in st.session_state:
-        del st.session_state['current_user']
+    """تسجيل الخروج وحذف الكوكيز والجلسة"""
+    cookie_manager = get_cookie_manager()
+    token = cookie_manager.get('auth_token')
+    
+    if token:
+        # حذف الجلسة من قاعدة البيانات
+        SessionModel.delete_session(token)
+    
+    # حذف الكوكيز من المتصفح
+    cookie_manager.delete('auth_token')
+    
+    # تنظيف الذاكرة
+    if 'user' in st.session_state:
+        del st.session_state['user']
+    
     st.rerun()
 
 def get_current_user():
-    """إرجاع كائن المستخدم الحالي إذا كان مسجلاً للدخول"""
-    if st.session_state.get('logged_in'):
-        return st.session_state.get('current_user')
+    """
+    جلب المستخدم الحالي سواء من الذاكرة أو من الكوكيز المحفوظة
+    """
+    # 1. المحاولة الأولى: من الذاكرة (سريع)
+    if 'user' in st.session_state:
+        return st.session_state['user']
+    
+    # 2. المحاولة الثانية: من الكوكيز (للدخول التلقائي)
+    cookie_manager = get_cookie_manager()
+    # ننتظر قليلاً لضمان تحميل مدير الكوكيز
+    token = cookie_manager.get('auth_token')
+    
+    if token:
+        # التحقق من صحة التوكن في قاعدة البيانات
+        user_id = SessionModel.get_user_id_by_token(token)
+        if user_id:
+            # جلب بيانات المستخدم
+            all_users = UserModel.get_all_users()
+            user = next((u for u in all_users if u.user_id == user_id), None)
+            
+            if user and user.is_active:
+                st.session_state['user'] = user
+                return user
+    
     return None
