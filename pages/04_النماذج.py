@@ -17,60 +17,18 @@ if not user:
 apply_custom_style()
 is_admin = user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]
 
-# ==========================================
-# 🧠 إدارة البيانات الذكية (Smart Data Management)
-# ==========================================
-
-# 1. تحميل البيانات مرة واحدة فقط عند دخول الصفحة
-if 'checklist_data' not in st.session_state:
-    with st.spinner("جاري جلب القوائم..."):
-        st.session_state.checklist_data = ChecklistModel.get_all_items()
-
-# زر تحديث يدوي (لجلب التغييرات التي قام بها أشخاص آخرون)
-col_ref1, col_ref2 = st.columns([10, 1])
-with col_ref2:
-    if st.button("🔄 تحديث"):
-        st.session_state.checklist_data = ChecklistModel.get_all_items()
-        st.rerun()
-
-# 2. دالة التغيير الذكية (تحدث الذاكرة + جوجل)
-def smart_toggle(item_id, current_status):
-    # أ. التحديث في جوجل شيت (يكتب فقط ولا يقرأ)
+# --- دوال مساعدة ---
+def toggle_item(item_id, current_status):
     ChecklistModel.toggle_status(item_id, current_status)
-    
-    # ب. التحديث في الذاكرة المحلية فوراً (بدون اتصال بالنت)
-    # نبحث عن العنصر في القائمة ونعكس حالته
-    for item in st.session_state.checklist_data:
-        if item.item_id == item_id:
-            item.is_checked = not current_status
-            break
-    
-    # ج. إعادة رسم الصفحة من الذاكرة (سريع جداً)
+    st.cache_resource.clear()
     st.rerun()
 
-# 3. دالة الحذف الذكية
-def smart_delete(item_id):
-    ChecklistModel.delete_item(item_id)
-    # حذف من الذاكرة المحلية
-    st.session_state.checklist_data = [i for i in st.session_state.checklist_data if i.item_id != item_id]
-    st.rerun()
-
-# 4. دالة الإضافة الذكية
-def smart_add(main, sub, name):
-    ChecklistModel.add_item(main, sub, name, user.name)
-    # هنا نضطر لجلب البيانات مرة أخرى لضمان الحصول على ID صحيح وجديد
-    # لكن بما أن الإضافة لا تحدث بكثرة التفاعل، فلا بأس بذلك
-    st.session_state.checklist_data = ChecklistModel.get_all_items()
-    st.success("تمت الإضافة")
-    st.rerun()
-
-
-# استخدم البيانات من الذاكرة بدلاً من جلبها كل مرة
-all_items = st.session_state.checklist_data
+# جلب البيانات
+all_items = ChecklistModel.get_all_items()
 existing_main_titles = sorted(list(set([i.main_title for i in all_items])))
 
 # ==========================================
-# 1. القائمة الجانبية (الإضافة)
+# 1. القائمة الجانبية (ذكية)
 # ==========================================
 if is_admin:
     with st.sidebar:
@@ -101,20 +59,24 @@ if is_admin:
                 else:
                     final_sub = selected_sub
 
+                # اسم البند
                 new_item_name = st.text_input("اسم البند", placeholder="مثال: طماطم")
                 
                 if st.form_submit_button("حفظ البند"):
                     if final_main and final_sub and new_item_name:
-                        smart_add(final_main, final_sub, new_item_name)
+                        ChecklistModel.add_item(final_main, final_sub, new_item_name, user.name)
+                        st.cache_resource.clear()
+                        st.success("تم!")
+                        st.rerun()
                     else:
                         st.warning("البيانات ناقصة")
 
 # ==========================================
-# 2. عرض القوائم (التصميم المظلل + الأداء السريع)
+# 2. عرض القوائم (التصميم الجديد المظلل)
 # ==========================================
 
 if not all_items:
-    st.info("القائمة فارغة، ابدأ بإضافة بنود.")
+    st.info("ابدأ بإضافة أول قسم من القائمة الجانبية.")
     st.stop()
 
 main_titles = sorted(list(set([item.main_title for item in all_items])))
@@ -137,36 +99,45 @@ for i, main_title in enumerate(main_titles):
                             st.write(f"إضافة إلى: {sub_title}")
                             quick_name = st.text_input("اسم البند", key=f"q_in_{main_title}_{sub_title}")
                             if st.form_submit_button("أضف"):
-                                smart_add(main_title, sub_title, quick_name)
+                                ChecklistModel.add_item(main_title, sub_title, quick_name, user.name)
+                                st.cache_resource.clear()
+                                st.rerun()
             
-            # الفلترة والفرز
+            # الفلترة
             my_items = [x for x in section_items if x.sub_title == sub_title]
             unchecked_items = [x for x in my_items if not x.is_checked]
             checked_items = [x for x in my_items if x.is_checked]
             
-            # 1. غير المنجز
+            # 1. غير المنجز (يظهر كنص عادي نظيف)
             if not unchecked_items and not checked_items:
                 st.caption("لا توجد بنود.")
             
             for item in unchecked_items:
                 c1, c2 = st.columns([0.5, 11])
                 with c1:
-                    # نستخدم smart_toggle هنا
-                    st.checkbox("done", False, key=f"c_{item.item_id}", label_visibility="collapsed", on_change=smart_toggle, args=(item.item_id, False))
+                    st.checkbox("done", False, key=f"c_{item.item_id}", label_visibility="collapsed", on_change=toggle_item, args=(item.item_id, False))
                 with c2:
-                    st.markdown(f"""<div style="padding: 5px; font-weight: 500;">{item.item_name}</div>""", unsafe_allow_html=True)
+                    # تصميم بسيط ونظيف لغير المنجز
+                    st.markdown(
+                        f"""<div style="padding: 5px; font-weight: 500;">{item.item_name}</div>""", 
+                        unsafe_allow_html=True
+                    )
+                    
                     if is_admin:
                          if st.button("🗑", key=f"d_{item.item_id}"):
-                             smart_delete(item.item_id)
+                             ChecklistModel.delete_item(item.item_id)
+                             st.cache_resource.clear()
+                             st.rerun()
 
-            # 2. المنجز (مظلل)
+            # 2. المنجز (يظهر مظللاً بخلفية رمادية خفيفة بدلاً من الشطب)
             if checked_items:
                 if unchecked_items: st.divider()
                 for item in checked_items:
                     c1, c2 = st.columns([0.5, 11])
                     with c1:
-                        st.checkbox("undone", True, key=f"c_{item.item_id}", label_visibility="collapsed", on_change=smart_toggle, args=(item.item_id, True))
+                        st.checkbox("undone", True, key=f"c_{item.item_id}", label_visibility="collapsed", on_change=toggle_item, args=(item.item_id, True))
                     with c2:
+                        # 🔥 التعديل هنا: ستايل مظلل (Shaded Style)
                         st.markdown(
                             f"""
                             <div style="
@@ -181,8 +152,11 @@ for i, main_title in enumerate(main_titles):
                             """,
                             unsafe_allow_html=True
                         )
+                        
                         if is_admin:
                              if st.button("🗑", key=f"d_{item.item_id}"):
-                                 smart_delete(item.item_id)
+                                 ChecklistModel.delete_item(item.item_id)
+                                 st.cache_resource.clear()
+                                 st.rerun()
             
-            st.write("")
+            st.write("") # مسافة
