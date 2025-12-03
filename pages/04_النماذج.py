@@ -8,28 +8,6 @@ from utils.formatting import apply_custom_style
 # 1. إعداد الصفحة
 st.set_page_config(page_title="القوائم والنماذج", page_icon="☑️", layout="wide")
 
-
-import streamlit as st
-import time # <--- مهم جداً للتأخير البسيط قبل الطرد
-from core.auth import get_current_user
-from core.constants import ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_SUPERVISOR
-
-# ... (بعد set_page_config) ...
-
-user = get_current_user()
-
-# قائمة الأدوار المسموح لها بدخول هذه الصفحة (عدلها حسب كل صفحة)
-# مثلاً صفحة المستخدمين والإعدادات: [ROLE_SUPER_ADMIN, ROLE_ADMIN]
-# صفحة رفع الوسائط: [ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_SUPERVISOR]
-ALLOWED_ROLES = [ROLE_SUPER_ADMIN, ROLE_ADMIN] 
-
-if not user or user.role_id not in ALLOWED_ROLES:
-    st.toast("⛔ عذراً، ليس لديك صلاحية لدخول هذه الصفحة! جارِ تحويلك...", icon="🚫")
-    time.sleep(1.5) # انتظار ثانية ونصف ليقرأ الرسالة
-    st.switch_page("app.py") # الطرد إلى الصفحة الرئيسية
-
-
-
 user = get_current_user()
 if not user:
     st.toast("🔒 سجل دخولك أولاً")
@@ -37,127 +15,134 @@ if not user:
     st.switch_page("app.py")
 
 apply_custom_style()
-
-# الصلاحيات
 is_admin = user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]
 
 # --- دوال مساعدة ---
 def toggle_item(item_id, current_status):
-    """دالة يتم استدعاؤها عند ضغط التشيك بوكس"""
     ChecklistModel.toggle_status(item_id, current_status)
-    # مسح الكاش لإعادة تحميل البيانات الجديدة فوراً
     st.cache_resource.clear()
     st.rerun()
 
+# جلب البيانات لملء القوائم
+all_items = ChecklistModel.get_all_items()
+existing_main_titles = sorted(list(set([i.main_title for i in all_items])))
+
 # ==========================================
-# 1. واجهة الإدارة (إضافة بنود جديدة)
+# 1. القائمة الجانبية (ذكية: اختيار أو كتابة)
 # ==========================================
 if is_admin:
     with st.sidebar:
         st.header("⚙️ إدارة القوائم")
-        with st.expander("➕ إضافة بند جديد", expanded=False):
-            with st.form("add_checklist_item"):
-                main_t = st.text_input("العنوان الرئيسي (مثال: بقالة)")
-                sub_t = st.text_input("العنوان الفرعي (مثال: حلى)")
-                i_name = st.text_input("اسم البند (مثال: كيك)")
+        
+        with st.expander("➕ إنشاء / إضافة بند", expanded=True):
+            with st.form("smart_add_form"):
+                # --- العنوان الرئيسي ---
+                # خيار لإضافة جديد أو اختيار موجود
+                main_options = ["✨ قسم جديد..."] + existing_main_titles
+                selected_main = st.selectbox("العنوان الرئيسي", main_options)
                 
-                if st.form_submit_button("إضافة"):
-                    if main_t and sub_t and i_name:
-                        ChecklistModel.add_item(main_t, sub_t, i_name, user.name)
-                        st.cache_resource.clear() # تحديث البيانات
-                        st.success("تمت الإضافة!")
+                final_main = ""
+                if selected_main == "✨ قسم جديد...":
+                    final_main = st.text_input("اكتب اسم القسم الجديد", placeholder="مثال: بقالة")
+                else:
+                    final_main = selected_main
+                
+                # --- العنوان الفرعي ---
+                # نحاول جلب العناوين الفرعية التابعة للقسم المختار فقط
+                sub_options = ["✨ فرعي جديد..."]
+                if final_main and final_main != "✨ قسم جديد...":
+                    relevant_subs = sorted(list(set([i.sub_title for i in all_items if i.main_title == final_main])))
+                    sub_options += relevant_subs
+                
+                selected_sub = st.selectbox("العنوان الفرعي", sub_options)
+                
+                final_sub = ""
+                if selected_sub == "✨ فرعي جديد...":
+                    final_sub = st.text_input("اكتب العنوان الفرعي", placeholder="مثال: خضار")
+                else:
+                    final_sub = selected_sub
+
+                # --- اسم البند ---
+                new_item_name = st.text_input("اسم البند", placeholder="مثال: طماطم")
+                
+                if st.form_submit_button("حفظ البند"):
+                    if final_main and final_sub and new_item_name:
+                        ChecklistModel.add_item(final_main, final_sub, new_item_name, user.name)
+                        st.cache_resource.clear()
+                        st.success("تم!")
                         st.rerun()
                     else:
-                        st.error("جميع الحقول مطلوبة")
-        st.divider()
+                        st.warning("البيانات ناقصة")
 
 # ==========================================
-# 2. عرض القوائم (الفرز الذكي)
+# 2. عرض القوائم (مع زر إضافة سريع)
 # ==========================================
-
-# جلب كل البيانات
-all_items = ChecklistModel.get_all_items()
 
 if not all_items:
-    st.info("القائمة فارغة، أضف بنوداً جديدة من القائمة الجانبية.")
+    st.info("ابدأ بإضافة أول قسم من القائمة الجانبية.")
     st.stop()
 
-# استخراج العناوين الرئيسية الفريدة لعمل التبويبات
-# نستخدم set لمنع التكرار ثم list للترتيب
+# التبويبات الرئيسية
 main_titles = sorted(list(set([item.main_title for item in all_items])))
-
-# إنشاء التبويبات الرئيسية (Tabs)
 tabs = st.tabs(main_titles)
 
 for i, main_title in enumerate(main_titles):
     with tabs[i]:
-        # نفلتر البنود الخاصة بهذا التبويب فقط
         section_items = [x for x in all_items if x.main_title == main_title]
-        
-        # استخراج العناوين الفرعية داخل هذا القسم
         sub_titles = sorted(list(set([item.sub_title for item in section_items])))
         
-        # عرض العناوين الفرعية
         for sub_title in sub_titles:
-            # تصميم العنوان الفرعي
-            st.markdown(f"### 🔸 {sub_title}")
+            # حاوية العنوان الفرعي وزر الإضافة السريع
+            col_head, col_add = st.columns([5, 1])
+            col_head.markdown(f"### 🔸 {sub_title}")
             
-            # فلترة البنود لهذا العنوان الفرعي
+            # --- الميزة الجديدة: زر إضافة سريع في نفس المكان ---
+            if is_admin:
+                with col_add:
+                    with st.popover("➕ بند"):
+                        with st.form(f"quick_add_{main_title}_{sub_title}"):
+                            st.write(f"إضافة إلى: {sub_title}")
+                            quick_name = st.text_input("اسم البند", key=f"q_in_{main_title}_{sub_title}")
+                            if st.form_submit_button("أضف"):
+                                ChecklistModel.add_item(main_title, sub_title, quick_name, user.name)
+                                st.cache_resource.clear()
+                                st.rerun()
+            # ------------------------------------------------
+            
+            # فلترة البنود
             my_items = [x for x in section_items if x.sub_title == sub_title]
-            
-            # --- الفرز السحري (Magic Sorting) ---
-            # نفصل البنود إلى مجموعتين: غير مكتملة (فوق) ومكتملة (تحت)
             unchecked_items = [x for x in my_items if not x.is_checked]
             checked_items = [x for x in my_items if x.is_checked]
             
-            # 1. عرض غير المكتمل (يظهر في الأعلى)
+            # 1. غير المنجز
+            if not unchecked_items and not checked_items:
+                st.caption("لا توجد بنود.")
+            
             for item in unchecked_items:
                 c1, c2 = st.columns([0.5, 11])
                 with c1:
-                    # التشيك بوكس: عند تغييره يتم تحديث القاعدة فوراً
-                    is_done = st.checkbox(
-                        "done", 
-                        value=False, 
-                        key=f"check_{item.item_id}", 
-                        label_visibility="collapsed",
-                        on_change=toggle_item,
-                        args=(item.item_id, False)
-                    )
+                    st.checkbox("done", False, key=f"c_{item.item_id}", label_visibility="collapsed", on_change=toggle_item, args=(item.item_id, False))
                 with c2:
                     st.write(f"**{item.item_name}**")
-                    # زر حذف صغير للمدير
                     if is_admin:
-                         if st.button("🗑", key=f"del_{item.item_id}"):
+                         if st.button("🗑", key=f"d_{item.item_id}"):
                              ChecklistModel.delete_item(item.item_id)
                              st.cache_resource.clear()
                              st.rerun()
 
-            # 2. عرض المكتمل (يظهر في الأسفل بلون باهت)
+            # 2. المنجز
             if checked_items:
-                if unchecked_items:
-                    st.divider() # فاصل بين المجموعتين
-                
+                if unchecked_items: st.divider()
                 for item in checked_items:
                     c1, c2 = st.columns([0.5, 11])
                     with c1:
-                        # هذا المربع معلم عليه صح مسبقاً
-                        is_undone = st.checkbox(
-                            "undone", 
-                            value=True, 
-                            key=f"check_{item.item_id}", 
-                            label_visibility="collapsed",
-                            on_change=toggle_item,
-                            args=(item.item_id, True)
-                        )
+                        st.checkbox("undone", True, key=f"c_{item.item_id}", label_visibility="collapsed", on_change=toggle_item, args=(item.item_id, True))
                     with c2:
-                        # عرض النص مشطوباً للإشارة للانتهاء
-                        st.markdown(f"~~{item.item_name}~~", help="تم الانتهاء منه")
+                        st.markdown(f"~~{item.item_name}~~")
                         if is_admin:
-                             if st.button("🗑", key=f"del_{item.item_id}"):
+                             if st.button("🗑", key=f"d_{item.item_id}"):
                                  ChecklistModel.delete_item(item.item_id)
                                  st.cache_resource.clear()
                                  st.rerun()
             
-            # مسافة بين كل قسم فرعي وآخر
-            st.write("") 
-            st.write("")
+            st.write("") # مسافة
