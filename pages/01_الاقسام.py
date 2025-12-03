@@ -1,4 +1,5 @@
 import streamlit as st
+import time # <--- مكتبة الوقت للطرد
 from models.section_model import SectionModel, TabModel, CategoryModel
 from models.content_model import ContentModel
 from models.permission_model import PermissionModel
@@ -11,25 +12,23 @@ from streamlit_quill import st_quill
 # 1. إعداد الصفحة
 st.set_page_config(page_title="تصفح الأقسام", page_icon="📂", layout="wide")
 
+# التحقق من الدخول (أول خطوة للطرد)
 user = get_current_user()
 if not user:
-    st.warning("🔒 يجب عليك تسجيل الدخول.")
-    st.stop()
+    st.toast("🔒 يجب تسجيل الدخول أولاً!", icon="🔐")
+    time.sleep(1)
+    st.switch_page("app.py") # طرد
 
 apply_custom_style()
 
-# --- دوال الصلاحيات المحدثة ---
-
+# --- دوال الصلاحيات ---
 def is_super_admin():
-    """للتحقق من المدير العام فقط (للحذف)"""
     return user.role_id == ROLE_SUPER_ADMIN
 
 def can_edit_structure():
-    """للإضافة والتعديل في الهيكل (مدير عام + مدير)"""
     return user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]
 
 def can_edit_content(section_id=None):
-    """للإضافة والتعديل في المحتوى (مدير عام + مدير + مشرف بصلاحية)"""
     if user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]: return True
     if user.role_id == ROLE_SUPERVISOR:
         can_view, can_edit = PermissionModel.check_access(user.user_id, section_id=section_id)
@@ -37,7 +36,7 @@ def can_edit_content(section_id=None):
     return False
 
 # ==========================================
-# 1. القائمة الجانبية
+# 1. القائمة الجانبية + منطق الطرد الذكي
 # ==========================================
 with st.sidebar:
     st.title("📌 الأقسام الرئيسية")
@@ -45,16 +44,31 @@ with st.sidebar:
     all_sections = SectionModel.get_all_sections()
     available_sections = []
     
+    # فلترة الأقسام بناءً على الصلاحيات
     for sec in all_sections:
-        if user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN] or sec.is_public:
+        # المدير يرى كل شيء
+        if user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]:
             available_sections.append(sec)
+        # القسم العام يراه الجميع
+        elif sec.is_public:
+            available_sections.append(sec)
+        # المستخدم العادي والزائر: نفحص جدول الصلاحيات
         else:
             can_view, _ = PermissionModel.check_access(user.user_id, section_id=sec.section_id)
             if can_view:
                 available_sections.append(sec)
     
+    # 🛑🛑 منطق الطرد الذكي 🛑🛑
+    # إذا كانت القائمة فارغة (لا يوجد أي قسم متاح له) وليس مديراً (المدير قد يريد إضافة قسم)
+    if not available_sections and not can_edit_structure():
+        st.toast("🚫 لا توجد أقسام مصرح لك برؤيتها حالياً.", icon="🚷")
+        time.sleep(2)
+        st.switch_page("app.py") # طرد للصفحة الرئيسية
+    
+    # عرض القائمة
     if not available_sections:
-        st.warning("لا توجد أقسام.")
+        if can_edit_structure():
+            st.info("لا توجد أقسام، أضف قسماً جديداً.")
         selected_section = None
     else:
         sec_map = {s.name: s for s in available_sections}
@@ -63,7 +77,6 @@ with st.sidebar:
 
     st.divider()
     
-    # الإضافة: متاحة للمدراء (Admin + Super Admin)
     if can_edit_structure():
         with st.expander("➕ إضافة قسم رئيسي"):
             with st.form("add_sec_sidebar"):
@@ -81,7 +94,6 @@ if selected_section:
     c1, c2 = st.columns([6, 1])
     c1.header(f"📂 {selected_section.name}")
     
-    # الحذف: حصري للمدير العام فقط
     if is_super_admin():
         if c2.button("🗑 حذف القسم", key=f"del_sec_{selected_section.section_id}"):
             SectionModel.delete_section(selected_section.section_id)
@@ -91,7 +103,6 @@ if selected_section:
 
     tabs = TabModel.get_tabs_by_section(selected_section.section_id)
 
-    # إضافة تبويب: متاحة للمدراء
     if can_edit_structure():
         with st.popover("➕ إضافة قسم فرعي (Tab)"):
             with st.form("add_tab_form"):
@@ -110,7 +121,6 @@ if selected_section:
             with st_tabs[i]:
                 categories = CategoryModel.get_categories_by_tab(tab.tab_id)
                 
-                # إضافة تصنيف: متاحة للمدراء
                 if can_edit_structure():
                     with st.expander("⚙️ إدارة التصنيفات"):
                         with st.form(f"add_cat_{tab.tab_id}"):
@@ -134,10 +144,8 @@ if selected_section:
                     selected_category = cat_map[selected_cat_name]
                     st.divider()
                     
-                    # --- عرض المحتوى ---
                     st.markdown(f"### 🏷️ {selected_category.name}")
                     
-                    # إضافة محتوى: متاحة لمن لديه صلاحية (Edit)
                     if can_edit_content(selected_section.section_id):
                         with st.expander("📝 إضافة محتوى جديد", expanded=False):
                             with st.form(f"add_cnt_{selected_category.category_id}"):
@@ -151,7 +159,7 @@ if selected_section:
                                 )
                                 
                                 st.markdown("---")
-                                st.write("🔗 **إرفاق ميديا (يوتيوب، تويتر، تيك توك...):**")
+                                st.write("🔗 **إرفاق ميديا:**")
                                 social_link = st.text_input("رابط الميديا", placeholder="https://...")
                                 
                                 if st.form_submit_button("نشر المحتوى"):
@@ -175,7 +183,6 @@ if selected_section:
                                 c_tit, c_del = st.columns([6, 1])
                                 c_tit.markdown(f"### {item.title}")
                                 
-                                # الحذف: حصري للمدير العام فقط
                                 if is_super_admin():
                                     if c_del.button("🗑", key=f"del_c_{item.content_id}"):
                                         ContentModel.delete_content(item.content_id)
