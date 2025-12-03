@@ -2,74 +2,99 @@ import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
 import pandas as pd
-from datetime import datetime
 
-# تحديد الصلاحيات المطلوبة (Scopes)
+# 1. إعداد الاتصال
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive"
 ]
 
 def get_connection():
-    """
-    دالة لإنشاء اتصال آمن مع Google Sheets باستخدام الأسرار المخزنة
-    """
+    """إنشاء اتصال آمن مع Google Sheets"""
     try:
-        # قراءة بيانات الاعتماد من ملف secrets.toml
-        # st.secrets converts the TOML section to a dictionary
-        credentials_info = st.secrets["google"]["service_account_json"]
-        
-        creds = Credentials.from_service_account_info(
-            credentials_info, scopes=SCOPES
-        )
-        client = gspread.authorize(creds)
-        return client
+        if "google" in st.secrets and "service_account_json" in st.secrets["google"]:
+            creds_dict = st.secrets["google"]["service_account_json"]
+            creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+            client = gspread.authorize(creds)
+            return client
+        return None
     except Exception as e:
-        st.error(f"❌ خطأ في الاتصال بـ Google Cloud: {e}")
+        st.error(f"❌ خطأ في الاتصال: {e}")
         return None
 
-def get_sheet_data(sheet_name):
-    """
-    قراءة البيانات من ورقة محددة وإرجاعها كـ DataFrame
-    """
+# 2. دالة جلب البيانات (للعرض)
+def get_data(sheet_name):
+    """جلب البيانات كـ DataFrame"""
     client = get_connection()
-    if not client:
-        return pd.DataFrame()
-    
+    if not client: return pd.DataFrame()
     try:
-        spreadsheet_id = st.secrets["google"]["spreadsheet_id"]
-        sh = client.open_by_key(spreadsheet_id)
-        worksheet = sh.worksheet(sheet_name)
-        
-        # جلب كل البيانات
-        data = worksheet.get_all_records()
-        df = pd.DataFrame(data)
-        return df
-    except gspread.exceptions.WorksheetNotFound:
-        st.warning(f"⚠️ الورقة '{sheet_name}' غير موجودة.")
-        return pd.DataFrame()
+        sh = client.open_by_key(st.secrets["google"]["spreadsheet_id"])
+        ws = sh.worksheet(sheet_name)
+        data = ws.get_all_records()
+        return pd.DataFrame(data)
     except Exception as e:
-        st.error(f"حدث خطأ أثناء قراءة {sheet_name}: {e}")
+        # st.error(f"خطأ في قراءة {sheet_name}: {e}")
         return pd.DataFrame()
 
-def add_row(sheet_name, row_data):
-    """
-    إضافة صف جديد إلى ورقة محددة
-    row_data: يجب أن يكون قائمة (List) بالقيم، مثال: ['user1', 'login', 'success']
-    """
+# 3. دالة الإضافة (Create)
+def add_row(sheet_name, row_data_list):
+    """إضافة صف جديد (يجب أن تكون البيانات قائمة List)"""
     client = get_connection()
-    if not client:
-        return False
-        
+    if not client: return False
     try:
-        spreadsheet_id = st.secrets["google"]["spreadsheet_id"]
-        sh = client.open_by_key(spreadsheet_id)
-        worksheet = sh.worksheet(sheet_name)
-        
-        # إضافة وقت الإنشاء تلقائيًا إذا لم يكن موجودًا (اختياري)
-        # worksheet.append_row(row_data) 
-        worksheet.append_row(row_data)
+        sh = client.open_by_key(st.secrets["google"]["spreadsheet_id"])
+        ws = sh.worksheet(sheet_name)
+        ws.append_row(row_data_list)
         return True
     except Exception as e:
-        st.error(f"❌ فشل في إضافة البيانات لـ {sheet_name}: {e}")
+        st.error(f"❌ فشل الإضافة: {e}")
+        return False
+
+# 4. دالة الحذف (Delete)
+def delete_row(sheet_name, id_column, id_value):
+    """حذف صف بناءً على قيمة المعرف (ID)"""
+    client = get_connection()
+    if not client: return False
+    try:
+        sh = client.open_by_key(st.secrets["google"]["spreadsheet_id"])
+        ws = sh.worksheet(sheet_name)
+        
+        # البحث عن الخلية التي تحتوي على الـ ID
+        cell = ws.find(str(id_value))
+        if cell:
+            ws.delete_rows(cell.row)
+            return True
+        st.warning("⚠️ لم يتم العثور على العنصر لحذفه")
+        return False
+    except Exception as e:
+        st.error(f"❌ فشل الحذف: {e}")
+        return False
+
+# 5. دالة التعديل (Update)
+def update_field(sheet_name, id_column, id_value, target_column, new_value):
+    """تحديث قيمة خلية واحدة محددة"""
+    client = get_connection()
+    if not client: return False
+    try:
+        sh = client.open_by_key(st.secrets["google"]["spreadsheet_id"])
+        ws = sh.worksheet(sheet_name)
+        
+        # البحث عن الصف
+        cell = ws.find(str(id_value))
+        if not cell:
+            return False
+            
+        # البحث عن رقم العمود المستهدف
+        headers = ws.row_values(1) # الصف الأول هو العناوين
+        try:
+            col_index = headers.index(target_column) + 1 # +1 لأن gspread يبدأ من 1
+        except ValueError:
+            st.error(f"العمود {target_column} غير موجود")
+            return False
+            
+        # تحديث الخلية
+        ws.update_cell(cell.row, col_index, new_value)
+        return True
+    except Exception as e:
+        st.error(f"❌ فشل التحديث: {e}")
         return False
