@@ -1,193 +1,163 @@
 import streamlit as st
-import pandas as pd
-from models.form_model import FormModel, FormAnswerModel
-from models.section_model import CategoryModel, SectionModel, TabModel
+import time
+from models.checklist_model import ChecklistModel
+from core.auth import get_current_user
+from core.constants import ROLE_SUPER_ADMIN, ROLE_ADMIN
+from utils.formatting import apply_custom_style
+
+# 1. إعداد الصفحة
+st.set_page_config(page_title="القوائم والنماذج", page_icon="☑️", layout="wide")
+
+
+import streamlit as st
+import time # <--- مهم جداً للتأخير البسيط قبل الطرد
 from core.auth import get_current_user
 from core.constants import ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_SUPERVISOR
 
-# 1. إعداد الصفحة
-st.set_page_config(page_title="النماذج والاستبيانات", page_icon="📝", layout="wide")
+# ... (بعد set_page_config) ...
+
+user = get_current_user()
+
+# قائمة الأدوار المسموح لها بدخول هذه الصفحة (عدلها حسب كل صفحة)
+# مثلاً صفحة المستخدمين والإعدادات: [ROLE_SUPER_ADMIN, ROLE_ADMIN]
+# صفحة رفع الوسائط: [ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_SUPERVISOR]
+ALLOWED_ROLES = [ROLE_SUPER_ADMIN, ROLE_ADMIN] 
+
+if not user or user.role_id not in ALLOWED_ROLES:
+    st.toast("⛔ عذراً، ليس لديك صلاحية لدخول هذه الصفحة! جارِ تحويلك...", icon="🚫")
+    time.sleep(1.5) # انتظار ثانية ونصف ليقرأ الرسالة
+    st.switch_page("app.py") # الطرد إلى الصفحة الرئيسية
+
+
 
 user = get_current_user()
 if not user:
-    st.warning("🔒 يرجى تسجيل الدخول.")
+    st.toast("🔒 سجل دخولك أولاً")
+    time.sleep(1)
+    st.switch_page("app.py")
+
+apply_custom_style()
+
+# الصلاحيات
+is_admin = user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]
+
+# --- دوال مساعدة ---
+def toggle_item(item_id, current_status):
+    """دالة يتم استدعاؤها عند ضغط التشيك بوكس"""
+    ChecklistModel.toggle_status(item_id, current_status)
+    # مسح الكاش لإعادة تحميل البيانات الجديدة فوراً
+    st.cache_resource.clear()
+    st.rerun()
+
+# ==========================================
+# 1. واجهة الإدارة (إضافة بنود جديدة)
+# ==========================================
+if is_admin:
+    with st.sidebar:
+        st.header("⚙️ إدارة القوائم")
+        with st.expander("➕ إضافة بند جديد", expanded=False):
+            with st.form("add_checklist_item"):
+                main_t = st.text_input("العنوان الرئيسي (مثال: بقالة)")
+                sub_t = st.text_input("العنوان الفرعي (مثال: حلى)")
+                i_name = st.text_input("اسم البند (مثال: كيك)")
+                
+                if st.form_submit_button("إضافة"):
+                    if main_t and sub_t and i_name:
+                        ChecklistModel.add_item(main_t, sub_t, i_name, user.name)
+                        st.cache_resource.clear() # تحديث البيانات
+                        st.success("تمت الإضافة!")
+                        st.rerun()
+                    else:
+                        st.error("جميع الحقول مطلوبة")
+        st.divider()
+
+# ==========================================
+# 2. عرض القوائم (الفرز الذكي)
+# ==========================================
+
+# جلب كل البيانات
+all_items = ChecklistModel.get_all_items()
+
+if not all_items:
+    st.info("القائمة فارغة، أضف بنوداً جديدة من القائمة الجانبية.")
     st.stop()
 
-from ui.layout import render_sidebar
-render_sidebar()
+# استخراج العناوين الرئيسية الفريدة لعمل التبويبات
+# نستخدم set لمنع التكرار ثم list للترتيب
+main_titles = sorted(list(set([item.main_title for item in all_items])))
 
-# 2. تحديد الصلاحيات
-is_admin = user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]
-is_supervisor = user.role_id == ROLE_SUPERVISOR
+# إنشاء التبويبات الرئيسية (Tabs)
+tabs = st.tabs(main_titles)
 
-st.title("📝 النماذج والاستبيانات")
-
-# تقسيم الصفحة إلى تبويبات حسب الدور
-tabs_list = ["تعبئة نموذج"]
-if is_admin or is_supervisor:
-    tabs_list.extend(["إنشاء نموذج جديد", "عرض الردود"])
-
-page_tabs = st.tabs(tabs_list)
-
-# --- تبويب 1: تعبئة النماذج (للجميع) ---
-with page_tabs[0]:
-    st.header("النماذج المتاحة")
-    all_forms = FormModel.get_all_forms()
-    
-    if not all_forms:
-        st.info("لا توجد نماذج متاحة حالياً.")
-    else:
-        # قائمة اختيار النموذج
-        form_titles = [f.title for f in all_forms]
-        selected_title = st.selectbox("اختر النموذج:", form_titles)
+for i, main_title in enumerate(main_titles):
+    with tabs[i]:
+        # نفلتر البنود الخاصة بهذا التبويب فقط
+        section_items = [x for x in all_items if x.main_title == main_title]
         
-        # البحث عن كائن النموذج المختار
-        selected_form = next((f for f in all_forms if f.title == selected_title), None)
+        # استخراج العناوين الفرعية داخل هذا القسم
+        sub_titles = sorted(list(set([item.sub_title for item in section_items])))
         
-        if selected_form:
-            st.markdown(f"### {selected_form.title}")
-            st.caption(selected_form.description)
-            st.divider()
+        # عرض العناوين الفرعية
+        for sub_title in sub_titles:
+            # تصميم العنوان الفرعي
+            st.markdown(f"### 🔸 {sub_title}")
             
-            # بناء النموذج ديناميكياً
-            with st.form(f"submit_form_{selected_form.form_id}"):
-                answers = {}
-                fields = selected_form.get_fields() # جلب الأسئلة من JSON
+            # فلترة البنود لهذا العنوان الفرعي
+            my_items = [x for x in section_items if x.sub_title == sub_title]
+            
+            # --- الفرز السحري (Magic Sorting) ---
+            # نفصل البنود إلى مجموعتين: غير مكتملة (فوق) ومكتملة (تحت)
+            unchecked_items = [x for x in my_items if not x.is_checked]
+            checked_items = [x for x in my_items if x.is_checked]
+            
+            # 1. عرض غير المكتمل (يظهر في الأعلى)
+            for item in unchecked_items:
+                c1, c2 = st.columns([0.5, 11])
+                with c1:
+                    # التشيك بوكس: عند تغييره يتم تحديث القاعدة فوراً
+                    is_done = st.checkbox(
+                        "done", 
+                        value=False, 
+                        key=f"check_{item.item_id}", 
+                        label_visibility="collapsed",
+                        on_change=toggle_item,
+                        args=(item.item_id, False)
+                    )
+                with c2:
+                    st.write(f"**{item.item_name}**")
+                    # زر حذف صغير للمدير
+                    if is_admin:
+                         if st.button("🗑", key=f"del_{item.item_id}"):
+                             ChecklistModel.delete_item(item.item_id)
+                             st.cache_resource.clear()
+                             st.rerun()
+
+            # 2. عرض المكتمل (يظهر في الأسفل بلون باهت)
+            if checked_items:
+                if unchecked_items:
+                    st.divider() # فاصل بين المجموعتين
                 
-                for field in fields:
-                    q_text = field.get("question", "سؤال بدون نص")
-                    q_type = field.get("type", "text")
-                    q_options = field.get("options", "").split(",") if "options" in field else []
-                    required = field.get("required", False)
-                    
-                    label = f"{q_text} {'(مطلوب)' if required else ''}"
-                    
-                    if q_type == "text":
-                        answers[q_text] = st.text_input(label)
-                    elif q_type == "textarea":
-                        answers[q_text] = st.text_area(label)
-                    elif q_type == "number":
-                        answers[q_text] = st.number_input(label, step=1)
-                    elif q_type == "radio":
-                        answers[q_text] = st.radio(label, q_options)
-                    elif q_type == "checkbox":
-                        answers[q_text] = st.multiselect(label, q_options)
-                    elif q_type == "date":
-                        answers[q_text] = str(st.date_input(label))
-                
-                submitted = st.form_submit_button("إرسال الإجابة", use_container_width=True)
-                
-                if submitted:
-                    # التحقق من الحقول المطلوبة (بسيط)
-                    missing = False
-                    for field in fields:
-                        if field.get("required") and not answers.get(field["question"]):
-                            missing = True
-                    
-                    if missing:
-                        st.error("يرجى تعبئة الحقول المطلوبة.")
-                    else:
-                        FormAnswerModel.submit_answer(selected_form.form_id, user.user_id, answers)
-                        st.success("✅ تم إرسال إجابتك بنجاح! شكراً لك.")
-
-# --- تبويب 2: إنشاء نموذج جديد (للمدراء) ---
-if is_admin or is_supervisor:
-    with page_tabs[1]:
-        st.header("🛠 بناء نموذج جديد")
-        
-        # مرحلة 1: البيانات الأساسية
-        with st.container(border=True):
-            new_title = st.text_input("عنوان النموذج")
-            new_desc = st.text_area("وصف النموذج")
+                for item in checked_items:
+                    c1, c2 = st.columns([0.5, 11])
+                    with c1:
+                        # هذا المربع معلم عليه صح مسبقاً
+                        is_undone = st.checkbox(
+                            "undone", 
+                            value=True, 
+                            key=f"check_{item.item_id}", 
+                            label_visibility="collapsed",
+                            on_change=toggle_item,
+                            args=(item.item_id, True)
+                        )
+                    with c2:
+                        # عرض النص مشطوباً للإشارة للانتهاء
+                        st.markdown(f"~~{item.item_name}~~", help="تم الانتهاء منه")
+                        if is_admin:
+                             if st.button("🗑", key=f"del_{item.item_id}"):
+                                 ChecklistModel.delete_item(item.item_id)
+                                 st.cache_resource.clear()
+                                 st.rerun()
             
-            # ربط النموذج بفئة (Category) اختيارياً
-            # (يمكننا تركه عاماً أو ربطه، هنا سنضعه عاماً "General" للتبسيط)
-            cat_id = "General" 
-            
-        st.divider()
-        
-        # مرحلة 2: بناء الأسئلة
-        st.subheader("إضافة الأسئلة")
-        
-        # نستخدم session_state لتخزين الأسئلة مؤقتاً قبل الحفظ
-        if 'temp_fields' not in st.session_state:
-            st.session_state.temp_fields = []
-            
-        # نموذج إضافة سؤال واحد
-        with st.expander("➕ أضف سؤالاً جديداً", expanded=True):
-            c1, c2 = st.columns([2, 1])
-            q_text = c1.text_input("نص السؤال")
-            q_type = c2.selectbox("نوع السؤال", ["text", "textarea", "number", "radio", "checkbox", "date"])
-            
-            q_opts = ""
-            if q_type in ["radio", "checkbox"]:
-                q_opts = st.text_input("الخيارات (افصل بينها بفاصلة ,)", placeholder="نعم,لا,ربما")
-            
-            q_req = st.checkbox("هذا السؤال مطلوب؟")
-            
-            if st.button("إدراج السؤال"):
-                if q_text:
-                    st.session_state.temp_fields.append({
-                        "question": q_text,
-                        "type": q_type,
-                        "options": q_opts,
-                        "required": q_req
-                    })
-                    st.rerun()
-
-        # عرض الأسئلة المضافة حالياً
-        if st.session_state.temp_fields:
-            st.write("🔽 الأسئلة الحالية:")
-            for idx, f in enumerate(st.session_state.temp_fields):
-                st.info(f"{idx+1}. {f['question']} ({f['type']})")
-                
-            if st.button("🗑 مسح الكل والبدء من جديد"):
-                st.session_state.temp_fields = []
-                st.rerun()
-
-            # زر الحفظ النهائي
-            if st.button("💾 حفظ النموذج نهائياً", type="primary"):
-                if new_title and st.session_state.temp_fields:
-                    FormModel.create_form(cat_id, new_title, new_desc, st.session_state.temp_fields, user.name)
-                    st.success("تم إنشاء النموذج بنجاح!")
-                    st.session_state.temp_fields = [] # تصفير
-                    st.rerun()
-                else:
-                    st.error("يرجى كتابة عنوان وإضافة سؤال واحد على الأقل.")
-
-# --- تبويب 3: عرض الردود (للمدراء) ---
-if is_admin or is_supervisor:
-    with page_tabs[2]:
-        st.header("📊 نتائج الاستبيانات")
-        
-        all_forms_2 = FormModel.get_all_forms()
-        if not all_forms_2:
-            st.write("لا نماذج.")
-        else:
-            target_form_title = st.selectbox("اختر النموذج لعرض نتائجه:", [f.title for f in all_forms_2], key="res_sel")
-            target_form = next((f for f in all_forms_2 if f.title == target_form_title), None)
-            
-            if target_form:
-                # جلب الإجابات
-                answers_list = FormAnswerModel.get_answers_by_form(target_form.form_id)
-                
-                if not answers_list:
-                    st.info("لا توجد إجابات لهذا النموذج بعد.")
-                else:
-                    st.metric("عدد الإجابات", len(answers_list))
-                    
-                    # تحويل البيانات لجدول عرض جميل
-                    # سنقوم بفك JSON لكل إجابة ووضعه في صف
-                    data_rows = []
-                    for ans in answers_list:
-                        row_data = ans.get_parsed_answers()
-                        row_data['تاريخ الإجابة'] = ans.created_at
-                        # يمكن إضافة اسم المستخدم إذا أردنا (يحتاج جلب user by id)
-                        data_rows.append(row_data)
-                    
-                    df = pd.DataFrame(data_rows)
-                    st.dataframe(df, use_container_width=True)
-                    
-                    # زر تحميل إكسل
-                    csv = df.to_csv(index=False).encode('utf-8-sig')
-                    st.download_button("📥 تحميل النتائج (Excel/CSV)", csv, "results.csv", "text/csv")
+            # مسافة بين كل قسم فرعي وآخر
+            st.write("") 
+            st.write("")
