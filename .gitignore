@@ -1,0 +1,5 @@
+# تجاهل ملفات الأسرار والملفات المؤقتة
+.streamlit/secrets.toml
+__pycache__/
+*.pyc
+.env
