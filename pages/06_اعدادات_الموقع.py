@@ -6,6 +6,29 @@ from core.constants import ROLE_SUPER_ADMIN, ROLE_ADMIN
 # 1. إعداد الصفحة
 st.set_page_config(page_title="إعدادات النظام", page_icon="⚙️", layout="wide")
 
+
+
+
+import streamlit as st
+import time # <--- مهم جداً للتأخير البسيط قبل الطرد
+from core.auth import get_current_user
+from core.constants import ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_SUPERVISOR
+
+# ... (بعد set_page_config) ...
+
+user = get_current_user()
+
+# قائمة الأدوار المسموح لها بدخول هذه الصفحة (عدلها حسب كل صفحة)
+# مثلاً صفحة المستخدمين والإعدادات: [ROLE_SUPER_ADMIN, ROLE_ADMIN]
+# صفحة رفع الوسائط: [ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_SUPERVISOR]
+ALLOWED_ROLES = [ROLE_SUPER_ADMIN, ROLE_ADMIN] 
+
+if not user or user.role_id not in ALLOWED_ROLES:
+    st.toast("⛔ عذراً، ليس لديك صلاحية لدخول هذه الصفحة! جارِ تحويلك...", icon="🚫")
+    time.sleep(1.5) # انتظار ثانية ونصف ليقرأ الرسالة
+    st.switch_page("app.py") # الطرد إلى الصفحة الرئيسية
+
+
 user = get_current_user()
 
 # التحقق من الصلاحيات (للمدراء فقط)
