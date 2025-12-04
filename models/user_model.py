@@ -42,15 +42,16 @@ class UserModel:
     def get_user_by_email(email):
         """البحث عن مستخدم بالبريد الإلكتروني"""
         df = get_data(TABLE_USERS)
+        
+        # --- التصحيح هنا: إرجاع قيمتين فارغتين بدلاً من واحدة ---
         if df.empty:
-            return None
+            return None, None
+        # -----------------------------------------------------
         
         # البحث في الـ DataFrame
         user_row = df[df['email'] == email]
         if not user_row.empty:
             row = user_row.iloc[0]
-            # نحتاج الباسورد هنا للتحقق، لذا سنرجع الصف الخام مؤقتًا أو نعدل الـ init
-            # للأمان، سنرجع الكائن، والتحقق من الباسورد يتم في دالة منفصلة
             return UserModel(
                 user_id=row['user_id'],
                 name=row['name'],
@@ -59,6 +60,7 @@ class UserModel:
                 status=row['status'],
                 created_at=row['created_at']
             ), row['password_hash'] # نرجع الهاش للتحقق
+            
         return None, None
 
     @staticmethod
