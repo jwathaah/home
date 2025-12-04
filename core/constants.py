@@ -43,3 +43,14 @@ CONTENT_TYPE_LINK = "link"
 STATUS_ACTIVE = "active"
 STATUS_INACTIVE = "inactive"
 STATUS_PENDING = "pending"
+
+
+
+# ... (بقية الجداول في الأعلى)
+TABLE_FORM_ANSWERS = "form_answers"
+TABLE_COMMENTS = "comments"
+TABLE_NOTIFICATIONS = "notifications"
+TABLE_SETTINGS = "settings"
+
+# ⬇️⬇️ أضف هذا السطر الناقص هنا ⬇️⬇️
+TABLE_CHECKLISTS = "checklists"
