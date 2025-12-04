@@ -1,11 +1,11 @@
-# تعريف أرقام الأدوار
+# تعريف أرقام الأدوار (مطابقة لملف roles.csv)
 ROLE_SUPER_ADMIN = 1
 ROLE_ADMIN = 2
 ROLE_SUPERVISOR = 3
 ROLE_MEMBER = 4
 ROLE_GUEST = 5
 
-# قاموس لترجمة الأدوار
+# قاموس لترجمة الأدوار (للعرض في الواجهة)
 ROLE_NAMES = {
     ROLE_SUPER_ADMIN: "المدير العام",
     ROLE_ADMIN: "مدير",
@@ -14,7 +14,7 @@ ROLE_NAMES = {
     ROLE_GUEST: "زائر"
 }
 
-# أسماء الجداول في Google Sheets
+# أسماء الجداول في Google Sheets (مطابقة لأسماء الورقات)
 TABLE_USERS = "users"
 TABLE_ROLES = "roles"
 TABLE_SECTIONS = "sections"
@@ -30,9 +30,8 @@ TABLE_FORM_ANSWERS = "form_answers"
 TABLE_COMMENTS = "comments"
 TABLE_NOTIFICATIONS = "notifications"
 TABLE_SETTINGS = "settings"
-TABLE_CHECKLISTS = "checklists"
 
-# أنواع المحتوى
+# أنواع المحتوى المتاحة
 CONTENT_TYPE_TEXT = "text"
 CONTENT_TYPE_IMAGE = "image"
 CONTENT_TYPE_VIDEO = "video"
