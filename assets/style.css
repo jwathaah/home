@@ -113,3 +113,26 @@ div[role="radiogroup"] > label:hover {
     background: #f9f9f9;
     border-color: #ccc;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/* إخفاء الشريط الجانبي الأصلي بالكامل لتحويله إلى أفقي */
+section[data-testid="stSidebar"] {
+    visibility: hidden;
+    width: 0px !important;
+    max-width: 0px !important;
+}
