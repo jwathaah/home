@@ -8,6 +8,19 @@ st.set_page_config(page_title="إعدادات النظام", page_icon="⚙️",
 
 
 
+# ... الاستيرادات ...
+from ui.layout import render_navbar
+
+st.set_page_config(...)
+
+# ... التحقق ...
+
+# 👇 استدعاء الشريط العلوي
+render_navbar(current_page="pages/06_اعدادات_الموقع.py")
+
+# ... باقي الكود ...
+
+
 
 import streamlit as st
 import time # <--- مهم جداً للتأخير البسيط قبل الطرد
