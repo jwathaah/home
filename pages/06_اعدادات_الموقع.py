@@ -1,50 +1,31 @@
 import streamlit as st
+import time
 from models.setting_model import SettingModel
 from core.auth import get_current_user
 from core.constants import ROLE_SUPER_ADMIN, ROLE_ADMIN
+from ui.layout import render_sidebar
 
 # 1. إعداد الصفحة
 st.set_page_config(page_title="إعدادات النظام", page_icon="⚙️", layout="wide")
 
-
-
-
-import streamlit as st
-import time # <--- مهم جداً للتأخير البسيط قبل الطرد
-from core.auth import get_current_user
-from core.constants import ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_SUPERVISOR
-
-# ... (بعد set_page_config) ...
-
+# 2. التحقق من المستخدم والصلاحيات
 user = get_current_user()
-
-# قائمة الأدوار المسموح لها بدخول هذه الصفحة (عدلها حسب كل صفحة)
-# مثلاً صفحة المستخدمين والإعدادات: [ROLE_SUPER_ADMIN, ROLE_ADMIN]
-# صفحة رفع الوسائط: [ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_SUPERVISOR]
-ALLOWED_ROLES = [ROLE_SUPER_ADMIN, ROLE_ADMIN] 
+ALLOWED_ROLES = [ROLE_SUPER_ADMIN, ROLE_ADMIN]
 
 if not user or user.role_id not in ALLOWED_ROLES:
     st.toast("⛔ عذراً، ليس لديك صلاحية لدخول هذه الصفحة! جارِ تحويلك...", icon="🚫")
-    time.sleep(1.5) # انتظار ثانية ونصف ليقرأ الرسالة
-    st.switch_page("app.py") # الطرد إلى الصفحة الرئيسية
+    time.sleep(1.5)
+    st.switch_page("app.py")
 
-
-user = get_current_user()
-
-# التحقق من الصلاحيات (للمدراء فقط)
-if not user or user.role_id not in [ROLE_SUPER_ADMIN, ROLE_ADMIN]:
-    st.warning("⛔ هذه الصفحة مخصصة لمدراء النظام فقط.")
-    st.stop()
-
-from ui.layout import render_sidebar
+# 3. عرض القائمة الجانبية والمحتوى
 render_sidebar()
 
 st.title("⚙️ إعدادات الموقع العامة")
 st.markdown("تحكم في خصائص المنصة الأساسية.")
 st.divider()
 
-# 2. التأكد من وجود القيم الافتراضية
-# هذه الخطوة تضمن عدم تعطل الصفحة إذا كان الجدول فارغاً
+# 4. منطق الإعدادات
+# التأكد من وجود القيم الافتراضية
 SettingModel.initialize_defaults(user.name)
 
 # جلب الإعدادات الحالية
@@ -56,7 +37,7 @@ def get_val(key):
         return current_settings[key].value
     return ""
 
-# 3. نموذج التعديل
+# نموذج التعديل
 with st.form("settings_form"):
     col1, col2 = st.columns(2)
     
@@ -97,7 +78,8 @@ with st.form("settings_form"):
             by_user = current_settings["site_title"].updated_by
             st.caption(f"آخر تحديث: {last_update} بواسطة {by_user}")
 
-# 4. معلومات تقنية
+# معلومات تقنية
 with st.expander("ℹ️ معلومات النسخة والخادم"):
     st.write("**الإصدار الحالي:** v1.0.0")
-    st.write(f"**متصل بقاعدة بيانات:** {st.secrets['google']['spreadsheet_id'][:10]}...")
+    if "google" in st.secrets and "spreadsheet_id" in st.secrets["google"]:
+        st.write(f"**متصل بقاعدة بيانات:** {st.secrets['google']['spreadsheet_id'][:10]}...")
