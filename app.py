@@ -10,11 +10,34 @@ from core.constants import ROLE_SUPER_ADMIN, ROLE_ADMIN
 # ------------------------------------
 st.set_page_config(page_title="منظومة الإدارة الذكية", page_icon="⚙️", layout="wide")
 apply_custom_style()
+import streamlit as st
+import time
+from streamlit_option_menu import option_menu
+from core.auth import get_current_user, logout_user
+from utils.formatting import apply_custom_style
+from core.constants import ROLE_SUPER_ADMIN, ROLE_ADMIN
+
+# ------------------------------------
+# 1. إعدادات البداية
+# ------------------------------------
+st.set_page_config(page_title="منظومة الإدارة الذكية", page_icon="⚙️", layout="wide")
+apply_custom_style()
 
 user = get_current_user()
 logged_in = user is not None
+
+# 🚨🚨 الخطأ كان هنا: يجب التحقق من الدخول فوراً قبل رسم أي شيء
+if not logged_in:
+    st.switch_page("pages/01_الدخول.py")
+
+
+# الآن، بعد أن تأكدنا أن المستخدم مسجل للدخول:
 is_admin = logged_in and user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]
 
+# ------------------------------------
+# 2. منطقة الترويسة الأفقية (الـ Navbar)
+# ------------------------------------
+# ... (باقي كود app.py كما هو) ...
 # ------------------------------------
 # 2. منطقة الترويسة الأفقية (الـ Navbar)
 # ------------------------------------
