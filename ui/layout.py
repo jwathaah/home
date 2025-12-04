@@ -3,47 +3,41 @@ from core.auth import get_current_user, logout_user
 from core.constants import ROLE_SUPER_ADMIN, ROLE_ADMIN
 from utils.formatting import apply_custom_style  # استدعاء دالة التنسيق
 
-# 👇 التعديل هنا: إضافة (current_page=None) لتقبل الدالة المتغير بدون مشاكل
-def render_navbar(current_page=None):
-    """رسم الشريط العلوي الموحد (بديل القائمة الجانبية)"""
+def render_sidebar():
+    """رسم القائمة الجانبية الموحدة وتطبيق التصميم العام"""
     
-    # 1. تطبيق التصميم (CSS)
+    # 1. تطبيق التصميم (CSS) فور استدعاء القائمة
     apply_custom_style()
     
     user = get_current_user()
     
-    # نستخدم حاوية علوية بدلاً من الـ sidebar
-    if user:
-        with st.container():
-            # تقسيم الشريط: يمين (معلومات) | وسط (روابط) | يسار (خروج)
-            col_info, col_links, col_logout = st.columns([3, 5, 1.5])
+    with st.sidebar:
+        if user:
+            # صورة المستخدم أو الشعار (اختياري)
+            # st.image("assets/logo.png", width=100)
             
-            # 1. قسم المعلومات (يمين)
-            with col_info:
-                from core.constants import ROLE_NAMES
-                role_name = ROLE_NAMES.get(user.role_id, "مستخدم")
-                st.markdown(f"**👤 {user.name}** | <span style='color:gray; font-size:0.8em'>{role_name}</span>", unsafe_allow_html=True)
+            st.markdown(f"### 👤 {user.name}")
+            st.caption(f"البريد: {user.email}")
             
-            # 2. قسم الروابط (وسط) - يظهر للمدراء فقط
-            with col_links:
-                if user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]:
-                    # عرض الروابط بجانب بعضها
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        st.page_link("pages/06_اعدادات_الموقع.py", label="الإعدادات", icon="⚙️")
-                    with c2:
-                        st.page_link("pages/07_المستخدمين.py", label="المستخدمين", icon="👥")
+            # عرض الدور الوظيفي بشكل جميل
+            from core.constants import ROLE_NAMES
+            role_name = ROLE_NAMES.get(user.role_id, "مستخدم")
+            st.info(f"الصلاحية: {role_name}")
             
-            # 3. قسم الخروج (يسار)
-            with col_logout:
-                if st.button("🚪 خروج", key="nav_logout_btn", use_container_width=True):
-                    logout_user()
-        
-        st.divider()
+            st.divider()
+            
+            # القوائم الخاصة بالمدراء فقط
+            if user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]:
+                st.markdown("##### 🛠 لوحة الإدارة")
+                st.page_link("pages/06_اعدادات_الموقع.py", label="إعدادات الموقع", icon="⚙️")
+                st.page_link("pages/07_المستخدمين.py", label="إدارة المستخدمين", icon="👥")
+                st.divider()
 
-    else:
-        # حالة نادرة (للزوار غير المسجلين)
-        pass
+            # زر تسجيل الخروج
+            if st.button("🚪 تسجيل الخروج", use_container_width=True):
+                logout_user()
+        else:
+            st.warning("غير مسجل دخول")
 
 def render_footer():
     """تذييل الصفحة"""
