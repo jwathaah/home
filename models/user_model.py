@@ -5,10 +5,10 @@ from datetime import datetime
 import hashlib
 
 class UserModel:
-    def __init__(self, user_id, name, email, role_id, status, created_at):
+    def __init__(self, user_id, name, username, role_id, status, created_at):
         self.user_id = user_id
         self.name = name
-        self.email = email
+        self.username = username
         self.role_id = int(role_id)
         self.status = status
         self.created_at = created_at
@@ -31,7 +31,7 @@ class UserModel:
                 users.append(UserModel(
                     user_id=row['user_id'],
                     name=row['name'],
-                    email=row['email'],
+                    username=row.get('username', ""),  # دعم النمط الجديد
                     role_id=row['role_id'],
                     status=row['status'],
                     created_at=row['created_at']
@@ -39,52 +39,61 @@ class UserModel:
         return users
 
     @staticmethod
-    def get_user_by_email(email):
-        """البحث عن مستخدم بالبريد الإلكتروني"""
+    def get_user_by_username(username):
+        """البحث عن مستخدم باسم المستخدم"""
+
         df = get_data(TABLE_USERS)
-        
-        # --- التصحيح هنا: إرجاع قيمتين فارغتين بدلاً من واحدة ---
+
+        # لا توجد بيانات
         if df.empty:
             return None, None
-        # -----------------------------------------------------
-        
-        # البحث في الـ DataFrame
-        user_row = df[df['email'] == email]
+
+        # تنظيف البيانات لتجنب الأخطاء
+        df['username'] = df['username'].astype(str).str.strip().str.lower()
+        username = str(username).strip().lower()
+
+        # البحث
+        user_row = df[df['username'] == username]
+
         if not user_row.empty:
             row = user_row.iloc[0]
             return UserModel(
                 user_id=row['user_id'],
                 name=row['name'],
-                email=row['email'],
+                username=row['username'],
                 role_id=row['role_id'],
                 status=row['status'],
                 created_at=row['created_at']
-            ), row['password_hash'] # نرجع الهاش للتحقق
+            ), row['password_hash']  # إرجاع الهاش
             
         return None, None
 
     @staticmethod
-    def create_user(name, email, password, role_id):
+    def create_user(name, username, password, role_id):
         """إنشاء مستخدم جديد"""
-        # التحقق من عدم وجود الايميل مسبقًا
-        existing_user, _ = UserModel.get_user_by_email(email)
+
+        # توحيد تنسيق الاسم
+        username = username.strip().lower()
+
+        # التحقق من عدم وجود المستخدم مسبقًا
+        existing_user, _ = UserModel.get_user_by_username(username)
         if existing_user:
-            return False, "البريد الإلكتروني مسجل مسبقًا"
+            return False, "اسم المستخدم مسجل مسبقًا"
 
         user_id = generate_uuid()
         password_hash = hashlib.sha256(str.encode(password)).hexdigest()
         created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        
+
         new_user = [
-            user_id, 
-            name, 
-            email, 
-            password_hash, 
-            role_id, 
-            STATUS_ACTIVE, 
+            user_id,
+            name,
+            username,
+            password_hash,
+            role_id,
+            STATUS_ACTIVE,
             created_at
         ]
-        
+
         success = add_row(TABLE_USERS, new_user)
         if success:
             return True, "تم إنشاء المستخدم بنجاح"
@@ -94,7 +103,7 @@ class UserModel:
     def update_user_status(user_id, new_status):
         """تغيير حالة المستخدم (تجميد/تفعيل)"""
         return update_field(TABLE_USERS, "user_id", user_id, "status", new_status)
-        
+
     @staticmethod
     def delete_user(user_id):
         """حذف مستخدم نهائيًا"""
