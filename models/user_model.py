@@ -23,15 +23,17 @@ class UserModel:
 
     @staticmethod
     def get_all_users():
-        """جلب جميع المستخدمين من قاعدة البيانات"""
         df = get_data(TABLE_USERS)
         users = []
         if not df.empty:
+            # تطبيع عمود username
+            if 'username' in df.columns:
+                df['username'] = df['username'].astype(str).str.strip().str.lower()
             for _, row in df.iterrows():
                 users.append(UserModel(
                     user_id=row['user_id'],
                     name=row['name'],
-                    username=row.get('username', ""),  # دعم النمط الجديد
+                    username=row.get('username', ""),
                     role_id=row['role_id'],
                     status=row['status'],
                     created_at=row['created_at']
@@ -40,21 +42,18 @@ class UserModel:
 
     @staticmethod
     def get_user_by_username(username):
-        """البحث عن مستخدم باسم المستخدم"""
-
         df = get_data(TABLE_USERS)
-
-        # لا توجد بيانات
         if df.empty:
             return None, None
 
-        # تنظيف البيانات لتجنب الأخطاء
+        # تطبيع اسم المستخدم والعمود
+        if 'username' not in df.columns:
+            return None, None
+
         df['username'] = df['username'].astype(str).str.strip().str.lower()
         username = str(username).strip().lower()
 
-        # البحث
         user_row = df[df['username'] == username]
-
         if not user_row.empty:
             row = user_row.iloc[0]
             return UserModel(
@@ -64,24 +63,18 @@ class UserModel:
                 role_id=row['role_id'],
                 status=row['status'],
                 created_at=row['created_at']
-            ), row['password_hash']  # إرجاع الهاش
-            
+            ), row.get('password_hash', None)
         return None, None
 
     @staticmethod
     def create_user(name, username, password, role_id):
-        """إنشاء مستخدم جديد"""
-
-        # توحيد تنسيق الاسم
-        username = username.strip().lower()
-
-        # التحقق من عدم وجود المستخدم مسبقًا
+        username = str(username).strip().lower()
         existing_user, _ = UserModel.get_user_by_username(username)
         if existing_user:
             return False, "اسم المستخدم مسجل مسبقًا"
 
         user_id = generate_uuid()
-        password_hash = hashlib.sha256(str.encode(password)).hexdigest()
+        password_hash = hashlib.sha256(str(password).encode()).hexdigest()
         created_at = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
         new_user = [
@@ -101,10 +94,8 @@ class UserModel:
 
     @staticmethod
     def update_user_status(user_id, new_status):
-        """تغيير حالة المستخدم (تجميد/تفعيل)"""
         return update_field(TABLE_USERS, "user_id", user_id, "status", new_status)
 
     @staticmethod
     def delete_user(user_id):
-        """حذف مستخدم نهائيًا"""
         return delete_row(TABLE_USERS, "user_id", user_id)
