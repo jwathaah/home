@@ -17,15 +17,17 @@ h1, h2, h3, h4, h5, h6, p, div, label, .stMarkdown {
     text-align: right !important;
 }
 
-/* 4. تعديل القائمة الجانبية (إخفاؤها لنقل التنقل للأعلى) */
+/* 4. تحسين القائمة الجانبية (Sidebar) */
 section[data-testid="stSidebar"] {
-    display: none; /* إخفاء الشريط الجانبي الأصلي */
+    direction: rtl;
+    text-align: right;
+    background-color: #f8f9fa; /* لون خلفية فاتح */
 }
 
-/* توسيع المحتوى ليأخذ كامل العرض وتنسيق المسافة العلوية */
-section.main > div {
-    padding-top: 2rem;
-    max-width: 100% !important;
+/* ضبط اتجاه الأزرار داخل القائمة */
+section[data-testid="stSidebar"] .stButton button {
+    width: 100%;
+    border-radius: 8px;
 }
 
 /* 5. إخفاء عناصر Streamlit الافتراضية (لجعل الموقع يبدو كتطبيق خاص) */
