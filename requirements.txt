@@ -10,3 +10,4 @@ Pillow
 streamlit-quill
 extra-streamlit-components
 streamlit-option-menu # هذا هو الجديد
+plotly
