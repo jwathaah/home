@@ -28,15 +28,15 @@ if not user:
         st.info("يرجى إدخال بيانات حسابك للمتابعة")
         
         with st.form("login_form"):
-            username = st.text_input("اسم المستخدم", placeholder="username123")
+            email = st.text_input("البريد الإلكتروني", placeholder="example@domain.com")
             password = st.text_input("كلمة المرور", type="password")
             submitted = st.form_submit_button("دخول", use_container_width=True)
             
             if submitted:
-                if not username or not password:
+                if not email or not password:
                     st.error("الرجاء تعبئة جميع الحقول!")
                 else:
-                    success, msg = login_user(username, password)
+                    success, msg = login_user(email, password)
                     if success:
                         st.success(msg)
                         st.rerun() # إعادة تحميل الصفحة للدخول
