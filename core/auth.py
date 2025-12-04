@@ -18,13 +18,15 @@ def hash_password(password):
 # ---------------------------------------------------------
 # دالة تسجيل الدخول (منطق فقط - بدون كوكيز)
 # ---------------------------------------------------------
-def login_user(email, password):
+def login_user(username, password):
     """
     تقوم فقط بالتحقق من البيانات وتحديث الذاكرة المؤقتة.
     مهمة حفظ الكوكيز ستتولاها دالة get_current_user تلقائياً.
     """
-    user, stored_hash = UserModel.get_user_by_email(email)
-    
+
+    # جلب المستخدم عبر اسم المستخدم
+    user, stored_hash = UserModel.get_user_by_username(username)
+
     if user and stored_hash == hash_password(password):
         if user.is_active:
             # 1. تحديث الذاكرة الحالية
@@ -36,7 +38,8 @@ def login_user(email, password):
             return True, "تم تسجيل الدخول بنجاح"
         else:
             return False, "هذا الحساب غير نشط"
-    return False, "البريد الإلكتروني أو كلمة المرور غير صحيحة"
+
+    return False, "اسم المستخدم أو كلمة المرور غير صحيحة"
 
 # ---------------------------------------------------------
 # دالة تسجيل الخروج
@@ -74,7 +77,6 @@ def get_current_user():
     cookie_manager = get_manager()
     
     # انتظار تحميل الكوكيز لتجنب الصفحة البيضاء
-    # (cookies sometimes return None on first load)
     stored_token = cookie_manager.get('auth_token')
 
     # -------------------------------------------
@@ -106,7 +108,6 @@ def get_current_user():
         
         if user_id:
             # التوكن صحيح، لنجلب بيانات المستخدم
-            # (للتسريع: نجلب الكل ونبحث، بدلاً من استدعاء قاعدة البيانات مرة أخرى)
             all_users = UserModel.get_all_users()
             user = next((u for u in all_users if u.user_id == user_id), None)
             
