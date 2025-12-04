@@ -1,31 +1,50 @@
 import streamlit as st
 import pandas as pd
-import time
 from models.user_model import UserModel
 from core.auth import get_current_user
 from core.constants import ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_NAMES
-from ui.layout import render_sidebar
 
 # 1. إعداد الصفحة
 st.set_page_config(page_title="إدارة المستخدمين", page_icon="👥", layout="wide")
 
-# 2. التحقق من المستخدم والصلاحيات
+import streamlit as st
+import time # <--- مهم جداً للتأخير البسيط قبل الطرد
+from core.auth import get_current_user
+from core.constants import ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_SUPERVISOR
+
+# ... (بعد set_page_config) ...
+
 user = get_current_user()
-ALLOWED_ROLES = [ROLE_SUPER_ADMIN, ROLE_ADMIN]
+
+# قائمة الأدوار المسموح لها بدخول هذه الصفحة (عدلها حسب كل صفحة)
+# مثلاً صفحة المستخدمين والإعدادات: [ROLE_SUPER_ADMIN, ROLE_ADMIN]
+# صفحة رفع الوسائط: [ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_SUPERVISOR]
+ALLOWED_ROLES = [ROLE_SUPER_ADMIN, ROLE_ADMIN] 
 
 if not user or user.role_id not in ALLOWED_ROLES:
     st.toast("⛔ عذراً، ليس لديك صلاحية لدخول هذه الصفحة! جارِ تحويلك...", icon="🚫")
-    time.sleep(1.5)
-    st.switch_page("app.py")
+    time.sleep(1.5) # انتظار ثانية ونصف ليقرأ الرسالة
+    st.switch_page("app.py") # الطرد إلى الصفحة الرئيسية
 
-# 3. عرض القائمة الجانبية والمحتوى
+
+
+
+
+user = get_current_user()
+
+# التحقق من الصلاحيات (للمدراء فقط)
+if not user or user.role_id not in [ROLE_SUPER_ADMIN, ROLE_ADMIN]:
+    st.warning("⛔ هذه الصفحة مخصصة لمدراء النظام فقط.")
+    st.stop()
+
+from ui.layout import render_sidebar
 render_sidebar()
 
 st.title("👥 إدارة المستخدمين والموظفين")
 st.markdown("إضافة أعضاء جدد والتحكم في صلاحيات الوصول.")
 st.divider()
 
-# 4. إحصائيات سريعة
+# 2. إحصائيات سريعة
 all_users = UserModel.get_all_users()
 active_count = len([u for u in all_users if u.status == 'active'])
 
@@ -36,7 +55,7 @@ c3.metric("الحسابات الموقوفة", len(all_users) - active_count)
 
 st.divider()
 
-# 5. تبويبات الإدارة
+# 3. تبويبات الإدارة
 tab1, tab2 = st.tabs(["📋 قائمة المستخدمين", "➕ إضافة مستخدم جديد"])
 
 # --- تبويب 1: قائمة المستخدمين ---
@@ -66,38 +85,35 @@ with tab1:
         
         # اختيار مستخدم للتعديل
         user_options = {f"{u.name} ({u.email})": u for u in all_users}
-        if user_options:
-            selected_label = st.selectbox("اختر مستخدم للتعديل:", list(user_options.keys()))
-            selected_u = user_options[selected_label]
-            
-            # لا نسمح بتعديل المدير العام من هنا (لحماية النظام)
-            if selected_u.role_id == ROLE_SUPER_ADMIN and user.user_id != selected_u.user_id:
-                 st.warning("لا يمكن تعديل حساب المدير العام الرئيسي.")
-            else:
-                with st.expander(f"تعديل بيانات: {selected_u.name}", expanded=True):
-                    col_e1, col_e2 = st.columns(2)
-                    
-                    with col_e1:
-                        # تعديل الحالة (تجميد/تفعيل)
-                        new_status = st.selectbox(
-                            "حالة الحساب", 
-                            ["active", "inactive"], 
-                            index=0 if selected_u.status == "active" else 1
-                        )
-                        if st.button("تحديث الحالة"):
-                            UserModel.update_user_status(selected_u.user_id, new_status)
-                            st.success("تم تحديث الحالة بنجاح!")
-                            time.sleep(1)
-                            st.rerun()
+        selected_label = st.selectbox("اختر مستخدم للتعديل:", list(user_options.keys()))
+        selected_u = user_options[selected_label]
+        
+        # لا نسمح بتعديل المدير العام من هنا (لحماية النظام)
+        if selected_u.role_id == ROLE_SUPER_ADMIN and user.user_id != selected_u.user_id:
+             st.warning("لا يمكن تعديل حساب المدير العام الرئيسي.")
+        else:
+            with st.expander(f"تعديل بيانات: {selected_u.name}", expanded=True):
+                col_e1, col_e2 = st.columns(2)
+                
+                with col_e1:
+                    # تعديل الحالة (تجميد/تفعيل)
+                    new_status = st.selectbox(
+                        "حالة الحساب", 
+                        ["active", "inactive"], 
+                        index=0 if selected_u.status == "active" else 1
+                    )
+                    if st.button("تحديث الحالة"):
+                        UserModel.update_user_status(selected_u.user_id, new_status)
+                        st.success("تم تحديث الحالة بنجاح!")
+                        st.rerun()
 
-                    with col_e2:
-                        # زر الحذف
-                        st.write("منطقة الخطر ⚠️")
-                        if st.button("🗑 حذف المستخدم نهائياً", type="primary"):
-                            UserModel.delete_user(selected_u.user_id) # تأكد أن دالة delete_user موجودة في UserModel
-                            st.warning(f"تم حذف المستخدم {selected_u.name}")
-                            time.sleep(1)
-                            st.rerun()
+                with col_e2:
+                    # زر الحذف (نحتاج دالة حذف في المودل، سنضيف زر تحذيري)
+                    st.write("منطقة الخطر ⚠️")
+                    if st.button("🗑 حذف المستخدم نهائياً", type="primary"):
+                        UserModel.delete_user(selected_u.user_id)
+                        st.warning(f"تم حذف المستخدم {selected_u.name}")
+                        st.rerun()
 
 # --- تبويب 2: إضافة مستخدم جديد ---
 with tab2:
@@ -123,7 +139,6 @@ with tab2:
                 success, msg = UserModel.create_user(u_name, u_email, u_pass, u_role_id)
                 if success:
                     st.success(f"✅ {msg}")
-                    time.sleep(1)
                     st.rerun()
                 else:
                     st.error(f"❌ {msg}")
