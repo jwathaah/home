@@ -7,21 +7,6 @@ from utils.formatting import apply_custom_style
 
 
 
-import streamlit as st
-from ui.layout import render_navbar # استدعاء
-# ... باقي الاستيرادات ...
-
-st.set_page_config(...) # إعدادات
-
-user = get_current_user()
-# ... التحقق من الدخول ...
-
-# 👇 استدعاء الشريط العلوي
-render_navbar(current_page="pages/04_النماذج.py")
-
-# ... باقي الكود ...
-
-
 
 
 
