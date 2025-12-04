@@ -1,80 +1,71 @@
 import streamlit as st
-from streamlit_option_menu import option_menu
-from core.auth import get_current_user, logout_user
-from utils.formatting import apply_custom_style
-from core.constants import ROLE_SUPER_ADMIN, ROLE_ADMIN
+from core.auth import login_user, get_current_user
+from ui.layout import render_sidebar, render_footer
 
-# ------------------------------------
-# 1. إعدادات البداية والتحقق الأمني
-# ------------------------------------
-st.set_page_config(page_title="منظومة الإدارة الذكية", page_icon="⚙️", layout="wide")
-apply_custom_style()
+# 1. إعدادات الصفحة (يجب أن تكون أول سطر)
+st.set_page_config(
+    page_title="المنصة المركزية لإدارة المحتوى",
+    page_icon="🏠",
+    layout="wide",
+    initial_sidebar_state="expanded"
+)
 
-# جلب حالة المستخدم
+# 2. التحقق من حالة الدخول
+if 'logged_in' not in st.session_state:
+    st.session_state['logged_in'] = False
+
 user = get_current_user()
-logged_in = user is not None
 
-# 🚨 التوجيه الأمني:
-# إذا لم يكن مسجلاً، اذهب لصفحة الدخول فوراً
-if not logged_in:
-    st.switch_page("pages/01_Login.py") 
-
-# تحديد صلاحية المدير
-is_admin = logged_in and user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]
-
-# ------------------------------------
-# 2. القائمة العلوية (Navbar)
-# ------------------------------------
-
-# تعريف الصفحات
-menu_items = [
-    {"icon": "house", "name": "الرئيسية", "page": "app.py"},
-]
-
-# إضافة الصفحات حسب الصلاحية
-if logged_in:
-    menu_items.append({"icon": "list-task", "name": "النماذج", "page": "pages/04_النماذج.py"})
+# 3. سيناريو 1: المستخدم غير مسجل دخول -> عرض شاشة الدخول
+if not user:
+    # تنسيق شاشة الدخول لتكون في المنتصف
+    col1, col2, col3 = st.columns([1, 2, 1])
     
-    if is_admin:
-        menu_items.append({"icon": "person-gear", "name": "إدارة المستخدمين", "page": "pages/02_إدارة_المستخدمين.py"})
+    with col2:
+        st.write("") # مسافة فارغة
+        st.write("") 
+        st.markdown("## 🔐 تسجيل الدخول للنظام")
+        st.info("يرجى إدخال بيانات حسابك للمتابعة")
+        
+        with st.form("login_form"):
+            email = st.text_input("البريد الإلكتروني", placeholder="example@domain.com")
+            password = st.text_input("كلمة المرور", type="password")
+            submitted = st.form_submit_button("دخول", use_container_width=True)
+            
+            if submitted:
+                if not email or not password:
+                    st.error("الرجاء تعبئة جميع الحقول!")
+                else:
+                    success, msg = login_user(email, password)
+                    if success:
+                        st.success(msg)
+                        st.rerun() # إعادة تحميل الصفحة للدخول
+                    else:
+                        st.error(msg)
+    
+    st.markdown("---")
+    st.caption("للحصول على حساب جديد، يرجى التواصل مع إدارة النظام.")
 
-# رسم الشريط العلوي
-col_menu, col_status = st.columns([10, 2])
-
-with col_menu:
-    page_names = [item["name"] for item in menu_items]
-    page_icons = [item["icon"] for item in menu_items]
-
-    selected_page_name = option_menu(
-        menu_title=None,
-        options=page_names,
-        icons=page_icons,
-        default_index=0,
-        orientation="horizontal",
-        styles={
-            "container": {"padding": "0!important", "background-color": "#fafafa"},
-            "icon": {"color": "#ff4b4b", "font-size": "18px"},
-            "nav-link": {"font-size": "16px", "text-align": "center", "margin": "0px"},
-            "nav-link-selected": {"background-color": "#ff4b4b", "color": "white"},
-        }
-    )
-
-# زر الخروج ومعلومات المستخدم
-with col_status:
-    if user:
-        st.caption(f"مرحباً، {user.name}")
-        st.button("↩️ خروج", on_click=logout_user, key="logout_btn_top")
-
-# ------------------------------------
-# 3. توجيه الصفحة
-# ------------------------------------
-selected_page = next((item for item in menu_items if item["name"] == selected_page_name), None)
-
-if selected_page:
-    if selected_page["page"] == "app.py":
-        # === محتوى الصفحة الرئيسية ===
-        st.header("🏡 الصفحة الرئيسية")
-        st.success(f"أهلاً بك في النظام يا **{user.name}**")
-        st.info("يمكنك التنقل عبر الشريط العلوي.")
-    else:
-        st.switch_page(selected_page["page"])
+# 4. سيناريو 2: المستخدم مسجل دخول -> عرض لوحة التحكم
+else:
+    # استدعاء القائمة الجانبية الموحدة
+    render_sidebar()
+    
+    # محتوى الصفحة الرئيسية
+    st.title(f"مرحباً بك، {user.name} 👋")
+    st.markdown("---")
+    
+    # إحصائيات سريعة (Dashboard)
+    col1, col2, col3, col4 = st.columns(4)
+    with col1:
+        st.metric(label="حالة النظام", value="Active 🟢")
+    with col2:
+        st.metric(label="الصلاحية", value=user.role_id) # يمكن تحسينها لعرض الاسم لاحقاً
+    with col3:
+        st.metric(label="تاريخ التسجيل", value=user.created_at[:10])
+    
+    st.markdown("### 🚀 الوصول السريع")
+    st.info("👈 استخدم القائمة الجانبية للتنقل بين أقسام النظام وإدارة المحتوى.")
+    
+    # تذييل الصفحة
+    render_footer()
