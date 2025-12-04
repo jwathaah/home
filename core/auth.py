@@ -5,46 +5,52 @@ import hashlib
 from models.user_model import UserModel
 from models.session_model import SessionModel
 
-# إعداد مدير الكوكيز (يجب أن يكون خارج الدوال)
-def get_cookie_manager():
-    return stx.CookieManager()
+# ---------------------------------------------------------
+# المدير الوحيد للكوكيز (يتم استدعاؤه مرة واحدة فقط)
+# ---------------------------------------------------------
+def get_manager():
+    # نستخدم مفتاحاً واحداً ثابتاً لمنع تكرار العناصر
+    return stx.CookieManager(key="auth_manager_key")
 
 def hash_password(password):
-    """تشفير كلمة المرور"""
     return hashlib.sha256(str.encode(password)).hexdigest()
 
+# ---------------------------------------------------------
+# دالة تسجيل الدخول (منطق فقط - بدون كوكيز)
+# ---------------------------------------------------------
 def login_user(email, password):
-    """تسجيل الدخول وإنشاء كوكيز لمدة 30 يوم"""
+    """
+    تقوم فقط بالتحقق من البيانات وتحديث الذاكرة المؤقتة.
+    مهمة حفظ الكوكيز ستتولاها دالة get_current_user تلقائياً.
+    """
     user, stored_hash = UserModel.get_user_by_email(email)
     
     if user and stored_hash == hash_password(password):
         if user.is_active:
-            # 1. حفظ في الذاكرة المؤقتة
+            # 1. تحديث الذاكرة الحالية
             st.session_state['user'] = user
             
-            # 2. إنشاء توكن جلسة وحفظه في القاعدة
-            token = SessionModel.create_session(user.user_id)
-            
-            # 3. حفظ التوكن في متصفح المستخدم (كوكيز) لمدة 30 يوم
-            cookie_manager = get_cookie_manager()
-            expires = datetime.now() + timedelta(days=30)
-            cookie_manager.set('auth_token', token, expires_at=expires)
+            # 2. وضع علامة أننا نحتاج لإنشاء جلسة (سيلتقطها الكود الآخر)
+            st.session_state['needs_new_session'] = True
             
             return True, "تم تسجيل الدخول بنجاح"
         else:
             return False, "هذا الحساب غير نشط"
     return False, "البريد الإلكتروني أو كلمة المرور غير صحيحة"
 
+# ---------------------------------------------------------
+# دالة تسجيل الخروج
+# ---------------------------------------------------------
 def logout_user():
-    """تسجيل الخروج وحذف الكوكيز والجلسة"""
-    cookie_manager = get_cookie_manager()
-    token = cookie_manager.get('auth_token')
+    # نحتاج المدير هنا للحذف
+    cookie_manager = get_manager()
     
+    # محاولة الحذف من القاعدة
+    token = cookie_manager.get('auth_token')
     if token:
-        # حذف الجلسة من قاعدة البيانات
         SessionModel.delete_session(token)
     
-    # حذف الكوكيز من المتصفح
+    # الحذف من المتصفح
     cookie_manager.delete('auth_token')
     
     # تنظيف الذاكرة
@@ -53,28 +59,59 @@ def logout_user():
     
     st.rerun()
 
+# ---------------------------------------------------------
+# الدالة الرئيسية: قلب النظام النابض
+# ---------------------------------------------------------
 def get_current_user():
     """
-    جلب المستخدم الحالي سواء من الذاكرة أو من الكوكيز المحفوظة
+    هذه الدالة تقوم بكل شيء:
+    1. تتحقق من الذاكرة.
+    2. تقرأ الكوكيز للدخول التلقائي.
+    3. تكتب الكوكيز إذا سجلت الدخول للتو.
     """
-    # 1. المحاولة الأولى: من الذاكرة (سريع)
+    
+    # 1. استدعاء مدير الكوكيز (مرة واحدة في الصفحة)
+    cookie_manager = get_manager()
+    
+    # انتظار تحميل الكوكيز لتجنب الصفحة البيضاء
+    # (cookies sometimes return None on first load)
+    stored_token = cookie_manager.get('auth_token')
+
+    # -------------------------------------------
+    # السيناريو أ: المستخدم موجود في الذاكرة (مسجل دخول حالياً)
+    # -------------------------------------------
     if 'user' in st.session_state:
-        return st.session_state['user']
-    
-    # 2. المحاولة الثانية: من الكوكيز (للدخول التلقائي)
-    cookie_manager = get_cookie_manager()
-    # ننتظر قليلاً لضمان تحميل مدير الكوكيز
-    token = cookie_manager.get('auth_token')
-    
-    if token:
-        # التحقق من صحة التوكن في قاعدة البيانات
-        user_id = SessionModel.get_user_id_by_token(token)
+        user = st.session_state['user']
+        
+        # هل نحتاج لإنشاء جلسة جديدة؟ (جاء من login_user)
+        if st.session_state.get('needs_new_session'):
+            # إنشاء توكن جديد في القاعدة
+            new_token = SessionModel.create_session(user.user_id)
+            
+            # زرع الكوكيز في المتصفح
+            expires = datetime.now() + timedelta(days=30)
+            cookie_manager.set('auth_token', new_token, expires_at=expires)
+            
+            # إزالة العلامة
+            del st.session_state['needs_new_session']
+            
+        return user
+
+    # -------------------------------------------
+    # السيناريو ب: المستخدم غير موجود في الذاكرة (فحص الكوكيز)
+    # -------------------------------------------
+    if stored_token:
+        # وجدنا كوكيز! لنتحقق من صحته
+        user_id = SessionModel.get_user_id_by_token(stored_token)
+        
         if user_id:
-            # جلب بيانات المستخدم
+            # التوكن صحيح، لنجلب بيانات المستخدم
+            # (للتسريع: نجلب الكل ونبحث، بدلاً من استدعاء قاعدة البيانات مرة أخرى)
             all_users = UserModel.get_all_users()
             user = next((u for u in all_users if u.user_id == user_id), None)
             
             if user and user.is_active:
+                # إعادة تسجيل الدخول في الذاكرة
                 st.session_state['user'] = user
                 return user
     
