@@ -4,8 +4,6 @@ from models.checklist_model import ChecklistModel
 from core.auth import get_current_user
 from core.constants import ROLE_SUPER_ADMIN, ROLE_ADMIN
 from utils.formatting import apply_custom_style
-# 👇 التعديل هنا: استيراد دالة الشريط العلوي
-from ui.layout import render_navbar
 
 # 1. إعداد الصفحة
 st.set_page_config(page_title="القوائم والنماذج", page_icon="☑️", layout="wide")
@@ -15,9 +13,6 @@ if not user:
     st.toast("🔒 سجل دخولك أولاً")
     time.sleep(1)
     st.switch_page("app.py")
-
-# 👇 التعديل هنا: استدعاء الشريط العلوي
-render_navbar(current_page="pages/04_النماذج.py")
 
 apply_custom_style()
 is_admin = user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]
@@ -32,18 +27,14 @@ def toggle_item(item_id, current_status):
 all_items = ChecklistModel.get_all_items()
 existing_main_titles = sorted(list(set([i.main_title for i in all_items])))
 
-st.title("☑️ القوائم والنماذج التفاعلية")
-
 # ==========================================
-# 1. واجهة الإدارة (تم نقلها للأعلى بدلاً من الجانب)
+# 1. القائمة الجانبية (ذكية)
 # ==========================================
 if is_admin:
-    # نضعها في Expander لكي لا تأخذ مساحة كبيرة
-    with st.expander("⚙️ إدارة القوائم: إنشاء / إضافة بند جديد", expanded=False):
-        with st.form("smart_add_form"):
-            c1, c2, c3 = st.columns(3)
-            
-            with c1:
+    with st.sidebar:
+        st.header("⚙️ إدارة القوائم")
+        with st.expander("➕ إنشاء / إضافة بند", expanded=True):
+            with st.form("smart_add_form"):
                 # العنوان الرئيسي
                 main_options = ["✨ قسم جديد..."] + existing_main_titles
                 selected_main = st.selectbox("العنوان الرئيسي", main_options)
@@ -53,8 +44,7 @@ if is_admin:
                     final_main = st.text_input("اكتب اسم القسم الجديد", placeholder="مثال: بقالة")
                 else:
                     final_main = selected_main
-            
-            with c2:
+                
                 # العنوان الفرعي
                 sub_options = ["✨ فرعي جديد..."]
                 if final_main and final_main != "✨ قسم جديد...":
@@ -69,29 +59,24 @@ if is_admin:
                 else:
                     final_sub = selected_sub
 
-            with c3:
                 # اسم البند
                 new_item_name = st.text_input("اسم البند", placeholder="مثال: طماطم")
-                st.write("") # مسافة تنسيقية
-                st.write("")
-                if st.form_submit_button("💾 حفظ البند", use_container_width=True):
+                
+                if st.form_submit_button("حفظ البند"):
                     if final_main and final_sub and new_item_name:
                         ChecklistModel.add_item(final_main, final_sub, new_item_name, user.name)
                         st.cache_resource.clear()
-                        st.success("تم الإضافة!")
-                        time.sleep(0.5)
+                        st.success("تم!")
                         st.rerun()
                     else:
                         st.warning("البيانات ناقصة")
 
-st.divider()
-
 # ==========================================
-# 2. عرض القوائم (التصميم المظلل)
+# 2. عرض القوائم (التصميم الجديد المظلل)
 # ==========================================
 
 if not all_items:
-    st.info("ابدأ بإضافة أول قسم من لوحة الإدارة في الأعلى.")
+    st.info("ابدأ بإضافة أول قسم من القائمة الجانبية.")
     st.stop()
 
 main_titles = sorted(list(set([item.main_title for item in all_items])))
@@ -109,7 +94,7 @@ for i, main_title in enumerate(main_titles):
             
             if is_admin:
                 with col_add:
-                    with st.popover("➕ بند سريع"):
+                    with st.popover("➕ بند"):
                         with st.form(f"quick_add_{main_title}_{sub_title}"):
                             st.write(f"إضافة إلى: {sub_title}")
                             quick_name = st.text_input("اسم البند", key=f"q_in_{main_title}_{sub_title}")
@@ -152,7 +137,7 @@ for i, main_title in enumerate(main_titles):
                     with c1:
                         st.checkbox("undone", True, key=f"c_{item.item_id}", label_visibility="collapsed", on_change=toggle_item, args=(item.item_id, True))
                     with c2:
-                        # 🔥 ستايل مظلل (Shaded Style)
+                        # 🔥 التعديل هنا: ستايل مظلل (Shaded Style)
                         st.markdown(
                             f"""
                             <div style="
