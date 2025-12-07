@@ -29,7 +29,7 @@ ROLE_NAMES = {
     ROLE_GUEST: "زائر"
 }
 
-# أسماء الجداول في قوقل شيت
+# أسماء الجداول
 TABLE_USERS = "users"
 TABLE_ROLES = "roles"
 TABLE_SECTIONS = "sections"
@@ -56,7 +56,6 @@ def _get_creds_object():
     try:
         if "google" not in st.secrets: return None
         
-        # دعم قراءة JSON كـ String أو Dict
         if "service_account_json" in st.secrets["google"]:
             creds_data = st.secrets["google"]["service_account_json"]
             creds_dict = json.loads(creds_data) if isinstance(creds_data, str) else creds_data
@@ -65,7 +64,6 @@ def _get_creds_object():
         else:
             return None
         
-        # إصلاح مشاكل التشفير في private_key
         if "private_key" in creds_dict:
             creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
         
@@ -79,7 +77,6 @@ def get_connection():
     return gspread.authorize(c) if c else None
 
 def _execute_with_retry(func, *args, **kwargs):
-    """دالة مساعدة لإعادة المحاولة عند حدوث أخطاء API"""
     for i in range(3):
         try: return func(*args, **kwargs)
         except APIError as e:
@@ -88,7 +85,7 @@ def _execute_with_retry(func, *args, **kwargs):
         except: return None
     return None
 
-# --- دوال التعامل مع البيانات (Data Operations) ---
+# --- دوال التعامل مع البيانات ---
 
 def get_data(sheet_name):
     client = get_connection()
@@ -141,30 +138,26 @@ def update_field(sheet_name, id_column, id_value, target_column, new_value):
     return _execute_with_retry(_upd) is True
 
 def upload_file_to_cloud(file_obj, filename, mime_type):
-    """رفع ملف إلى Google Drive (مخصص للمجلدات المشتركة Shared Drives)"""
+    """رفع ملف إلى Google Drive مع دعم كامل لـ Shared Drives"""
     creds = _get_creds_object()
     if not creds: return None, None
     try:
-        # قراءة معرف المجلد من ملف الأسرار
         fid = st.secrets["google"].get("drive_folder_id")
         service = build('drive', 'v3', credentials=creds)
         
         safe_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}"
-        
-        # إعداد الميتاداتا
-        file_metadata = {
-            'name': safe_name,
-            'parents': [fid]
-        }
+        meta = {'name': safe_name, 'parents': [fid]}
         
         media = MediaIoBaseUpload(file_obj, mimetype=mime_type, resumable=True)
         
-        # تنفيذ الرفع مع تفعيل دعم Shared Drives
+        # --- التعديل الجوهري هنا ---
+        # إضافة supportsTeamDrives=True لضمان التوافق القديم
         f = service.files().create(
-            body=file_metadata,
-            media_body=media,
+            body=meta, 
+            media_body=media, 
             fields='id, webViewLink',
-            supportsAllDrives=True  # <--- هذا السطر هو الأهم للمجلدات المشتركة
+            supportsAllDrives=True,
+            supportsTeamDrives=True  # إضافة هامة
         ).execute()
         
         return f.get('id'), f.get('webViewLink')
@@ -172,7 +165,15 @@ def upload_file_to_cloud(file_obj, filename, mime_type):
     except Exception as e:
         error_msg = str(e)
         if "storageQuotaExceeded" in error_msg:
-             st.error("❌ خطأ: مساحة التخزين ممتلئة. تأكد من أن drive_folder_id في ملف الأسرار يشير إلى Shared Drive وأن البوت مضاف بصلاحية Content Manager.")
+             st.error(f"""
+             ❌ **خطأ: مساحة التخزين ممتلئة.**
+             
+             النظام يحاول الرفع إلى المجلد ID: `{st.secrets["google"].get("drive_folder_id")}`
+             
+             الحلول:
+             1. تأكد أن هذا الـ ID يخص **مساحة تخزين مشتركة (Shared Drive)** وليس مجلداً عادياً.
+             2. تأكد أن إيميل البوت (`{creds.service_account_email if hasattr(creds, 'service_account_email') else 'Service Account'}`) مضاف كـ **Content Manager**.
+             """)
         else:
              st.error(f"Upload Error: {error_msg}")
         return None, None
