@@ -1,113 +1,150 @@
 import streamlit as st
-from services.google_drive import upload_file_to_drive
-from models.media_model import MediaModel
-from core.auth import get_current_user
-from core.constants import ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_SUPERVISOR
+import time
+from datetime import datetime
 
-# 1. إعداد الصفحة
+# ==========================================
+# 1. الاستدعاءات (Imports)
+# ==========================================
+try:
+    # استيراد النماذج والثوابت من الباك إند الموحد
+    from backend import (
+        MediaModel, 
+        ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_SUPERVISOR
+    )
+    from core.auth import get_current_user
+    
+    # استيراد خدمة رفع الملفات (نفترض وجودها في services كما في الكود الأصلي)
+    # إذا لم تكن موجودة، تأكد من إنشاء الملف services/google_drive.py
+    from services.google_drive import upload_file_to_drive
+    
+except ImportError as e:
+    st.error(f"⚠️ خطأ في الاستيراد: {e}\nيرجى التأكد من وجود ملفات backend.py و services/google_drive.py")
+    st.stop()
+
+# ==========================================
+# 2. إعداد الصفحة
+# ==========================================
 st.set_page_config(page_title="مكتبة الوسائط", page_icon="🖼️", layout="wide")
 
-
-import streamlit as st
-import time # <--- مهم جداً للتأخير البسيط قبل الطرد
-from core.auth import get_current_user
-from core.constants import ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_SUPERVISOR
-
-# ... (بعد set_page_config) ...
-
+# ==========================================
+# 3. التحقق من الصلاحيات
+# ==========================================
 user = get_current_user()
 
-# قائمة الأدوار المسموح لها بدخول هذه الصفحة (عدلها حسب كل صفحة)
-# مثلاً صفحة المستخدمين والإعدادات: [ROLE_SUPER_ADMIN, ROLE_ADMIN]
-# صفحة رفع الوسائط: [ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_SUPERVISOR]
-ALLOWED_ROLES = [ROLE_SUPER_ADMIN, ROLE_ADMIN] 
+# تحديد من يحق له الدخول (المدراء والمشرفين)
+ALLOWED_ROLES = [ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_SUPERVISOR]
 
 if not user or user.role_id not in ALLOWED_ROLES:
-    st.toast("⛔ عذراً، ليس لديك صلاحية لدخول هذه الصفحة! جارِ تحويلك...", icon="🚫")
-    time.sleep(1.5) # انتظار ثانية ونصف ليقرأ الرسالة
-    st.switch_page("app.py") # الطرد إلى الصفحة الرئيسية
+    st.toast("⛔ عذراً، ليس لديك صلاحية لدخول هذه الصفحة!", icon="🚫")
+    time.sleep(1.5)
+    st.switch_page("app.py")
 
+# ==========================================
+# 4. دوال مساعدة
+# ==========================================
+@st.cache_data(ttl=60)
+def get_cached_media():
+    """جلب قائمة الوسائط مع التخزين المؤقت لتسريع التصفح"""
+    return MediaModel.get_all_media()
 
-# التحقق من الدخول والصلاحيات (يسمح للمدراء والمشرفين فقط)
-user = get_current_user()
-if not user:
-    st.warning("🔒 يرجى تسجيل الدخول.")
-    st.stop()
+def clear_media_cache():
+    st.cache_data.clear()
 
-if user.role_id not in [ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_SUPERVISOR]:
-    st.error("⛔ ليس لديك صلاحية لرفع الوسائط.")
-    st.stop()
+# ==========================================
+# 5. واجهة المستخدم الرئيسية
+# ==========================================
+st.title("📂 مكتبة الوسائط والملفات")
+st.markdown("---")
 
-# القائمة الجانبية
-from ui.layout import render_sidebar
-render_sidebar()
+# تقسيم الصفحة لتبويبين
+tabs = st.tabs(["⬆️ رفع ملف جديد", "🖼️ استعراض المكتبة"])
 
-st.title("🖼️ مكتبة الوسائط")
-st.markdown("مركز رفع الصور والفيديوهات لاستخدامها داخل المحتوى.")
-
-# 2. قسم الرفع (Upload Section)
-with st.container(border=True):
-    st.subheader("☁️ رفع ملف جديد")
-    uploaded_file = st.file_uploader("اختر صورة أو فيديو", type=['png', 'jpg', 'jpeg', 'mp4', 'pdf'])
+# --- التبويب 1: رفع الملفات ---
+with tabs[0]:
+    st.header("رفع ملفات إلى Google Drive")
     
-    if uploaded_file is not None:
-        file_details = {"FileName": uploaded_file.name, "FileType": uploaded_file.type, "FileSize": uploaded_file.size}
-        st.caption(f"تفاصيل الملف: {file_details}")
+    with st.container(border=True):
+        uploaded_file = st.file_uploader(
+            "اختر ملفاً للرفع (صور، فيديو، مستندات)", 
+            type=['png', 'jpg', 'jpeg', 'pdf', 'mp4', 'docx', 'xlsx'],
+            accept_multiple_files=False
+        )
+
+        if uploaded_file is not None:
+            # عرض تفاصيل الملف قبل الرفع
+            file_details = {
+                "اسم الملف": uploaded_file.name,
+                "النوع": uploaded_file.type,
+                "الحجم": f"{uploaded_file.size / 1024:.2f} KB"
+            }
+            st.json(file_details)
+            
+            if st.button("🚀 بدء الرفع", use_container_width=True):
+                with st.status("جارٍ معالجة الملف...", expanded=True) as status:
+                    st.write("1️⃣ الاتصال بـ Google Drive...")
+                    # عملية الرفع
+                    try:
+                        drive_file_id, web_view_link = upload_file_to_drive(uploaded_file)
+                        
+                        st.write("2️⃣ حفظ البيانات في النظام...")
+                        # حفظ البيانات في الشيت عبر Backend
+                        MediaModel.add_media(
+                            name=uploaded_file.name,
+                            mtype=uploaded_file.type,
+                            drive_id=drive_file_id,
+                            by=user.name
+                        )
+                        
+                        status.update(label="✅ تم الرفع بنجاح!", state="complete", expanded=False)
+                        st.success(f"تم رفع الملف: {uploaded_file.name}")
+                        
+                        # تحديث الكاش ليظهر الملف في المكتبة فوراً
+                        clear_media_cache()
+                        time.sleep(1)
+                        st.rerun()
+                        
+                    except Exception as e:
+                        status.update(label="❌ حدث خطأ!", state="error")
+                        st.error(f"تفاصيل الخطأ: {str(e)}")
+
+# --- التبويب 2: مكتبة الوسائط ---
+with tabs[1]:
+    st.header("الأرشيف")
+    
+    # أزرار تحكم علوية
+    c_filter, c_refresh = st.columns([6, 1])
+    with c_refresh:
+        if st.button("🔄 تحديث", use_container_width=True):
+            clear_media_cache()
+            st.rerun()
+            
+    # جلب البيانات
+    all_media = get_cached_media()
+    
+    if not all_media:
+        st.info("لا توجد ملفات مرفوعة حتى الآن.")
+    else:
+        # عرض الملفات في شبكة (Grid)
+        # عدد الأعمدة يعتمد على حجم الشاشة، نستخدم 4 كمتوسط
+        cols_count = 4
+        cols = st.columns(cols_count)
         
-        if st.button("🚀 بدء الرفع إلى Google Drive", type="primary"):
-            with st.spinner("جاري الرفع... يرجى الانتظار"):
-                # 1. الرفع الفعلي للدرايف
-                file_id, web_link = upload_file_to_drive(uploaded_file, uploaded_file.name, uploaded_file.type)
-                
-                if file_id and web_link:
-                    # 2. الحفظ في قاعدة البيانات
-                    MediaModel.add_media(
-                        file_name=uploaded_file.name,
-                        file_type=uploaded_file.type,
-                        google_drive_id=file_id,
-                        uploaded_by=user.name
-                    )
-                    st.success("✅ تم الرفع والحفظ بنجاح!")
-                    st.balloons()
-                    st.rerun() # تحديث الصفحة لظهور الصورة في المعرض
-
-st.divider()
-
-# 3. معرض الصور (Gallery)
-st.subheader("📂 الملفات المرفوعة سابقاً")
-
-all_media = MediaModel.get_all_media()
-
-if not all_media:
-    st.info("المكتبة فارغة حالياً.")
-else:
-    # عرض الصور في شبكة (Grid)
-    # سنعرض 4 صور في كل صف
-    cols = st.columns(4)
-    for i, media in enumerate(all_media):
-        with cols[i % 4]:
-            with st.container(border=True):
-                # عرض أيقونة حسب نوع الملف
-                if "image" in media.file_type:
-                    # للأسف روابط Drive المباشرة تحتاج معالجة لتظهر كصورة مباشرة في Streamlit
-                    # لكن سنعرض اسم الصورة وزر الرابط حالياً
-                    st.image("assets/icons/image_placeholder.png") if False else st.markdown("🖼️ **صورة**")
-                elif "video" in media.file_type:
-                    st.markdown("🎥 **فيديو**")
-                else:
-                    st.markdown("📄 **ملف**")
-                
-                st.markdown(f"**{media.file_name}**")
-                st.caption(f"بواسطة: {media.uploaded_by}")
-                st.caption(f"{media.uploaded_at}")
-                
-                # ملاحظة: رابط webContentLink يقوم بالتنزيل المباشر
-                # رابط webViewLink للعرض
-                # سنحتاج لتخزين الرابط في المودل لعرضه هنا، حالياً سنعتمد على أن المودل خزّن الـ ID
-                # لتسهيل الأمر في هذه المرحلة، سنعرض زر لفتح الملف
-                
-                # تحويل ID إلى رابط قابل للعرض (تقريبي)
-                view_link = f"https://drive.google.com/file/d/{media.google_drive_id}/view?usp=sharing"
-                
-                st.link_button("🔗 فتح الملف", view_link)
-                st.code(view_link, language="text") # لنسخ الرابط بسهولة
+        for index, item in enumerate(all_media):
+            with cols[index % cols_count]:
+                with st.container(border=True):
+                    # محاولة تحديد أيقونة مناسبة بناءً على نوع الملف
+                    icon = "📄"
+                    if "image" in item.file_type: icon = "🖼️"
+                    elif "video" in item.file_type: icon = "🎥"
+                    elif "pdf" in item.file_type: icon = "📕"
+                    
+                    st.markdown(f"### {icon}")
+                    st.markdown(f"**{item.file_name}**")
+                    st.caption(f"👤 {item.uploaded_by}")
+                    st.caption(f"📅 {item.uploaded_at}")
+                    
+                    # رابط العرض
+                    # ملاحظة: item.google_drive_id يجب أن يكون مخزناً بشكل صحيح
+                    drive_link = f"https://drive.google.com/file/d/{item.google_drive_id}/view?usp=sharing"
+                    
+                    st.link_button("👁️ عرض الملف", drive_link, use_container_width=True)
