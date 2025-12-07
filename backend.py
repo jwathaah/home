@@ -1,16 +1,15 @@
 import streamlit as st
 import gspread
-from google.oauth2.service_account import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
 import pandas as pd
 import json
 import time
 import uuid
 import hashlib
 from datetime import datetime, timedelta
+from google.oauth2.service_account import Credentials
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
 from gspread.exceptions import APIError, WorksheetNotFound
-from streamlit_option_menu import option_menu # تأكد من وجودها في requirements
 
 # ==========================================
 # 1. الثوابت (Constants)
@@ -29,7 +28,7 @@ ROLE_NAMES = {
     ROLE_GUEST: "زائر"
 }
 
-# أسماء الجداول
+# أسماء الجداول في قوقل شيت
 TABLE_USERS = "users"
 TABLE_ROLES = "roles"
 TABLE_SECTIONS = "sections"
@@ -44,7 +43,7 @@ TABLE_SETTINGS = "settings"
 STATUS_ACTIVE = "active"
 
 # ==========================================
-# 2. إعدادات جوجل (Google Config)
+# 2. إعدادات جوجل والاتصال (Google Config)
 # ==========================================
 SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
@@ -52,8 +51,11 @@ SCOPES = [
 ]
 
 def _get_creds_object():
+    """تجهيز بيانات الاعتماد"""
     try:
         if "google" not in st.secrets: return None
+        
+        # دعم قراءة JSON كـ String أو Dict
         if "service_account_json" in st.secrets["google"]:
             creds_data = st.secrets["google"]["service_account_json"]
             creds_dict = json.loads(creds_data) if isinstance(creds_data, str) else creds_data
@@ -62,6 +64,7 @@ def _get_creds_object():
         else:
             return None
         
+        # إصلاح مشاكل التشفير في private_key
         if "private_key" in creds_dict:
             creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
         
@@ -70,10 +73,12 @@ def _get_creds_object():
 
 @st.cache_resource(ttl=600)
 def get_connection():
+    """إنشاء اتصال مع Google Sheets"""
     c = _get_creds_object()
     return gspread.authorize(c) if c else None
 
 def _execute_with_retry(func, *args, **kwargs):
+    """دالة مساعدة لإعادة المحاولة عند حدوث أخطاء API"""
     for i in range(3):
         try: return func(*args, **kwargs)
         except APIError as e:
@@ -82,7 +87,8 @@ def _execute_with_retry(func, *args, **kwargs):
         except: return None
     return None
 
-# --- دوال التعامل مع البيانات ---
+# --- دوال التعامل مع البيانات (Data Operations) ---
+
 def get_data(sheet_name):
     client = get_connection()
     if not client: return pd.DataFrame()
@@ -134,6 +140,7 @@ def update_field(sheet_name, id_column, id_value, target_column, new_value):
     return _execute_with_retry(_upd) is True
 
 def upload_file_to_cloud(file_obj, filename, mime_type):
+    """رفع ملف إلى Google Drive (يدعم Shared Drives)"""
     creds = _get_creds_object()
     if not creds: return None, None
     try:
@@ -145,7 +152,7 @@ def upload_file_to_cloud(file_obj, filename, mime_type):
         
         media = MediaIoBaseUpload(file_obj, mimetype=mime_type, resumable=True)
         
-        # التعديل هنا: إضافة supportsAllDrives=True
+        # supportsAllDrives=True ضروري للمجلدات المشتركة
         f = service.files().create(
             body=meta, 
             media_body=media, 
@@ -158,7 +165,7 @@ def upload_file_to_cloud(file_obj, filename, mime_type):
     except Exception as e:
         error_msg = str(e)
         if "storageQuotaExceeded" in error_msg:
-             st.error("❌ خطأ: مساحة التخزين ممتلئة. تأكد من مشاركة مجلد الدرايف مع إيميل الـ Service Account بصلاحية Editor.")
+             st.error("❌ خطأ: مساحة التخزين ممتلئة. تأكد من أنك رفعت الملف إلى مجلد مشترك (Shared Drive) وأضفت إيميل البوت كـ Content Manager.")
         else:
              st.error(f"Upload Error: {error_msg}")
         return None, None
@@ -168,6 +175,7 @@ def generate_uuid(): return str(uuid.uuid4())
 # ==========================================
 # 3. الموديلات (Models)
 # ==========================================
+
 class UserModel:
     def __init__(self, uid, name, email, rid, status, created):
         self.user_id, self.name, self.email = uid, name, email
@@ -250,7 +258,6 @@ class PermissionModel:
         return [PermissionModel(r['permission_id'], r['user_id'], r['section_id'], r['tab_id'], r['view'], r['edit'], r['hidden']) for _, r in df[df['user_id']==str(uid)].iterrows()] if not df.empty else []
     @staticmethod
     def grant_permission(uid, sid="", tid="", cid="", view=True, edit=False, hidden=False):
-        # حذف القديم إن وجد (تبسيطاً للكود)
         add_row(TABLE_PERMISSIONS, [generate_uuid(), uid, str(sid), str(tid), str(cid), str(view), str(edit), str(hidden)])
     @staticmethod
     def check_access(uid, section_id=None):
@@ -306,7 +313,6 @@ class SettingModel:
 # 4. أدوات النظام (UI & Auth Helpers)
 # ==========================================
 
-# --- دوال التوثيق (Auth) ---
 def get_current_user():
     """إرجاع المستخدم من الجلسة"""
     if 'user' in st.session_state and st.session_state.get('logged_in'):
@@ -325,11 +331,9 @@ def login_procedure(email, password):
     return False, "بيانات خاطئة"
 
 def logout_procedure():
-    """منطق تسجيل الخروج"""
     st.session_state.clear()
     st.rerun()
 
-# --- دوال الواجهة (UI) ---
 def apply_custom_style():
     """تطبيق CSS العام"""
     st.markdown("""
@@ -342,13 +346,13 @@ def apply_custom_style():
     """, unsafe_allow_html=True)
 
 def render_sidebar():
-    """رسم القائمة الجانبية الموحدة"""
+    """رسم القائمة الجانبية"""
+    from streamlit_option_menu import option_menu
     user = get_current_user()
     with st.sidebar:
         if user:
             st.info(f"👤 {user.name}\n\n🏷️ {user.role_name}")
         
-        # القائمة
         selected = option_menu(
             menu_title=None,
             options=["الرئيسية", "الأقسام", "المكتبة", "النماذج", "التقارير", "الإدارة"],
@@ -357,7 +361,6 @@ def render_sidebar():
             styles={"nav-link": {"font-size": "14px", "text-align": "right"}}
         )
         
-        # أزرار التوجيه
         if selected == "الرئيسية":
             if st.button("🏠 الذهاب للرئيسية", use_container_width=True): st.switch_page("app.py")
         elif selected == "الأقسام": st.switch_page("pages/01_الاقسام.py")
@@ -375,6 +378,5 @@ def render_sidebar():
             logout_procedure()
 
 def render_social_media(link):
-    """عرض روابط السوشيال ميديا"""
     if "youtube" in link: st.video(link)
     else: st.markdown(f"🔗 [رابط]({link})")
