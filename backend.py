@@ -1,14 +1,15 @@
 import streamlit as st
 import gspread
 from google.oauth2.service_account import Credentials
-from google.cloud import storage
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
 import pandas as pd
 import json
 import time
 import uuid
 import hashlib
 from datetime import datetime, timedelta
-from gspread.exceptions import APIError
+from gspread.exceptions import APIError, WorksheetNotFound
 
 # ==========================================
 # 1. الثوابت (Constants)
@@ -61,41 +62,38 @@ SCOPES = [
     "https://www.googleapis.com/auth/drive"
 ]
 
-@st.cache_resource(ttl=600)
-def get_connection():
+def _get_creds_object():
+    """دالة داخلية لجلب بيانات الاعتماد معالجةً"""
     try:
         if "google" not in st.secrets: return None
-        creds_data = st.secrets["google"].get("service_account_json") or st.secrets["google"].get("service_account")
-        if not creds_data: return None
-
-        if isinstance(creds_data, str):
-            creds_dict = json.loads(creds_data)
+        
+        # دعم الطريقتين (JSON String أو Dict)
+        if "service_account_json" in st.secrets["google"]:
+            creds_data = st.secrets["google"]["service_account_json"]
+            creds_dict = json.loads(creds_data) if isinstance(creds_data, str) else creds_data
+        elif "service_account" in st.secrets["google"]:
+            creds_dict = dict(st.secrets["google"]["service_account"])
         else:
-            creds_dict = dict(creds_data)
+            return None
 
+        # إصلاح مفتاح التشفير
         if "private_key" in creds_dict:
             creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
 
-        creds = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+        return Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+    except Exception as e:
+        st.error(f"Error loading credentials: {e}")
+        return None
+
+@st.cache_resource(ttl=600)
+def get_connection():
+    try:
+        creds = _get_creds_object()
+        if not creds: return None
         return gspread.authorize(creds)
     except Exception as e:
         st.error(f"Error connecting to Sheets: {e}")
         return None
-
-def get_storage_client():
-    try:
-        if "google" in st.secrets:
-            creds_data = st.secrets["google"].get("service_account_json") or st.secrets["google"].get("service_account")
-            if isinstance(creds_data, str): creds_dict = json.loads(creds_data)
-            else: creds_dict = dict(creds_data)
-            
-            if "private_key" in creds_dict:
-                creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-                
-            credentials = Credentials.from_service_account_info(creds_dict)
-            return storage.Client(credentials=credentials, project=creds_dict.get("project_id"))
-        return None
-    except: return None
 
 def _execute_with_retry(func, *args, **kwargs):
     for i in range(3):
@@ -106,33 +104,50 @@ def _execute_with_retry(func, *args, **kwargs):
                 time.sleep((i + 1) * 2)
                 continue
             else: return None
-        except: return None
+        except Exception as e:
+            # st.error(f"Retry Error: {e}") # يمكن تفعيلها للتتبع
+            return None
     return None
+
+# --- دوال التعامل مع البيانات (CRUD) ---
 
 def get_data(sheet_name):
     client = get_connection()
     if not client: return pd.DataFrame()
+    
     def _fetch():
-        sh = client.open_by_key(st.secrets["google"]["spreadsheet_id"])
-        ws = sh.worksheet(sheet_name)
-        return pd.DataFrame(ws.get_all_records())
+        try:
+            sh = client.open_by_key(st.secrets["google"]["spreadsheet_id"])
+            ws = sh.worksheet(sheet_name)
+            return pd.DataFrame(ws.get_all_records())
+        except WorksheetNotFound:
+            # إذا الورقة غير موجودة، ننشئها تلقائياً لتجنب توقف النظام
+            return pd.DataFrame()
+            
     result = _execute_with_retry(_fetch)
     return result if result is not None else pd.DataFrame()
 
 def add_row(sheet_name, row_data_list):
     client = get_connection()
     if not client: return False
+    
     def _add():
         sh = client.open_by_key(st.secrets["google"]["spreadsheet_id"])
-        ws = sh.worksheet(sheet_name)
+        try:
+            ws = sh.worksheet(sheet_name)
+        except WorksheetNotFound:
+            ws = sh.add_worksheet(title=sheet_name, rows=100, cols=20)
+            
         ws.append_row(row_data_list)
         return True
+        
     result = _execute_with_retry(_add)
     return result is True
 
 def delete_row(sheet_name, id_column, id_value):
     client = get_connection()
     if not client: return False
+    
     def _delete():
         sh = client.open_by_key(st.secrets["google"]["spreadsheet_id"])
         ws = sh.worksheet(sheet_name)
@@ -141,42 +156,69 @@ def delete_row(sheet_name, id_column, id_value):
             ws.delete_rows(cell.row)
             return True
         return False
+        
     result = _execute_with_retry(_delete)
     return result is True
 
 def update_field(sheet_name, id_column, id_value, target_column, new_value):
     client = get_connection()
     if not client: return False
+    
     def _update():
         sh = client.open_by_key(st.secrets["google"]["spreadsheet_id"])
         ws = sh.worksheet(sheet_name)
         cell = ws.find(str(id_value))
         if not cell: return False
+        
         headers = ws.row_values(1)
-        try: col_index = headers.index(target_column) + 1
-        except: return False
-        ws.update_cell(cell.row, col_index, new_value)
-        return True
+        try: 
+            col_index = headers.index(target_column) + 1
+            ws.update_cell(cell.row, col_index, new_value)
+            return True
+        except ValueError: 
+            return False
+            
     result = _execute_with_retry(_update)
     return result is True
 
+# --- دالة الرفع (تم تعديلها لتعمل مع Google Drive Folder بدلاً من Cloud Storage Bucket) ---
 def upload_file_to_cloud(file_obj, filename, mime_type):
-    client = get_storage_client()
-    if not client: return None, None
+    """رفع ملف إلى Google Drive (مجلد)"""
+    creds = _get_creds_object()
+    if not creds: return None, None
+
     try:
-        bucket_name = st.secrets["google"].get("bucket_name")
-        bucket = client.bucket(bucket_name)
+        drive_folder_id = st.secrets["google"].get("drive_folder_id")
+        if not drive_folder_id:
+            st.error("Missing drive_folder_id in secrets")
+            return None, None
+
+        service = build('drive', 'v3', credentials=creds)
+        
+        # إضافة طابع زمني للاسم
         safe_filename = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}"
-        blob = bucket.blob(safe_filename)
-        file_obj.seek(0)
-        blob.upload_from_file(file_obj, content_type=mime_type)
-        return safe_filename, f"https://storage.googleapis.com/{bucket_name}/{safe_filename}"
+
+        file_metadata = {
+            'name': safe_filename,
+            'parents': [drive_folder_id]
+        }
+        
+        media = MediaIoBaseUpload(file_obj, mimetype=mime_type, resumable=True)
+
+        file = service.files().create(
+            body=file_metadata,
+            media_body=media,
+            fields='id, webViewLink'
+        ).execute()
+
+        return file.get('id'), file.get('webViewLink')
+
     except Exception as e:
         st.error(f"Upload failed: {e}")
         return None, None
 
 # ==========================================
-# 4. الموديلات (Models)
+# 4. الموديلات (Models) - كاملة كما طلبت
 # ==========================================
 
 class UserModel:
@@ -391,3 +433,6 @@ class SettingModel:
         defaults = [["site_title", "المنصة", "العنوان"], ["system_status", "active", "الحالة"], ["allow_guest_view", "false", "الزوار"], ["announcement_bar", "", "إعلان"]]
         for k, v, d in defaults:
             if k not in curr: add_row(TABLE_SETTINGS, [k, v, d, user, datetime.now().strftime("%Y-%m-%d %H:%M:%S")])
+
+# إنشاء كائن جاهز للتأكد من الاستدعاء
+# (في هذا التصميم، الاستدعاء يتم عبر الطرق الساكنة Static Methods، لذا لا حاجة لإنشاء instance)
