@@ -48,7 +48,7 @@ with st.sidebar:
     for sec in all_sections:
         # المدير يرى كل شيء
         if user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]:
-            available_ections.append(sec)
+            available_sections.append(sec) 
         # القسم العام يراه الجميع
         elif sec.is_public:
             available_sections.append(sec)
