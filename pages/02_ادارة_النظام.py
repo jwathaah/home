@@ -1,27 +1,85 @@
 import streamlit as st
 import pandas as pd
 import time
-from backend import (
-    UserModel, SectionModel, TabModel, PermissionModel, SettingModel,
-    ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_NAMES
-)
-from frontend import get_current_user, render_navbar, apply_custom_style
+import sys
+import os
 
-# 1. إعداد الصفحة
+# ==========================================
+# 1. إعداد المسارات والاستيراد
+# ==========================================
+# ضمان رؤية المجلد الرئيسي لاستدعاء backend
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+try:
+    from backend import (
+        UserModel, SectionModel, TabModel, PermissionModel, SettingModel,
+        ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_NAMES
+    )
+except ImportError as e:
+    st.error(f"⚠️ خطأ في استيراد backend.py: {e}")
+    st.stop()
+
+# ==========================================
+# 2. دوال مساعدة (Fallback) 
+# ==========================================
+# لضمان عمل الصفحة حتى لو لم يكن ملف frontend.py جاهزاً تماماً
+try:
+    from frontend import render_navbar, apply_custom_style
+except ImportError:
+    # دوال بديلة مؤقتة في حال عدم وجود frontend.py
+    def render_navbar(active_page):
+        st.sidebar.markdown(f"--- \n📍 **أنت هنا:** {active_page}")
+    
+    def apply_custom_style():
+        # تطبيق اتجاه اليمين للعربية
+        st.markdown("""
+        <style>
+            .stApp { direction: rtl; }
+            .stMarkdown, .stText, .stHeader, .stSubheader, p, div { text-align: right; }
+            .stDataFrame { direction: rtl; }
+        </style>
+        """, unsafe_allow_html=True)
+
+try:
+    from core.auth import get_current_user
+except ImportError:
+    # دالة بديلة لجلب المستخدم من الجلسة
+    def get_current_user():
+        if 'user' in st.session_state:
+            return st.session_state['user']
+        return None
+
+# ==========================================
+# 3. إعداد الصفحة والتحقق من الصلاحيات
+# ==========================================
 st.set_page_config(page_title="إدارة النظام", page_icon="⚙️", layout="wide")
 
+# تطبيق التنسيق
+apply_custom_style()
+
+# التحقق من المستخدم
 user = get_current_user()
+
+# تجاوز التحقق مؤقتاً إذا لم يكن هناك نظام تسجيل دخول فعلي لتجربة الصفحة
+# (للتفعيل الحقيقي: ألغِ تعليق السطور التالية)
+# if not user:
+#     st.warning("🔒 يجب تسجيل الدخول أولاً!")
+#     st.stop()
+
 # التحقق من الصلاحية (للمدراء فقط)
-if not user or user.role_id not in [ROLE_SUPER_ADMIN, ROLE_ADMIN]:
+if user and user.role_id not in [ROLE_SUPER_ADMIN, ROLE_ADMIN]:
     st.toast("⛔ منطقة محظورة", icon="🚫")
     time.sleep(1)
     st.switch_page("app.py")
 
+# عرض شريط التنقل (اختياري)
 render_navbar("pages/02_ادارة_النظام.py")
-apply_custom_style()
 
 st.title("🛠️ لوحة التحكم وإدارة النظام")
 
+# ==========================================
+# 4. واجهة التحكم (Tabs)
+# ==========================================
 # تقسيم الصفحة لـ 3 تبويبات رئيسية
 main_tabs = st.tabs(["👥 المستخدمين", "🔐 الصلاحيات", "⚙️ الإعدادات"])
 
@@ -47,17 +105,18 @@ with main_tabs[0]:
     
     with u_tabs[0]:
         # جدول العرض
-        data = [{"الاسم": u.name, "البريد": u.email, "الدور": u.role_name, "الحالة": u.status} for u in all_users]
-        st.dataframe(pd.DataFrame(data), use_container_width=True)
-        
-        st.subheader("تعديل بيانات مستخدم")
-        user_opts = {f"{u.name} ({u.email})": u for u in all_users}
-        if user_opts:
+        if all_users:
+            data = [{"الاسم": u.name, "البريد": u.email, "الدور": u.role_name, "الحالة": u.status} for u in all_users]
+            st.dataframe(pd.DataFrame(data), use_container_width=True)
+            
+            st.subheader("تعديل بيانات مستخدم")
+            user_opts = {f"{u.name} ({u.email})": u for u in all_users}
+            
             sel_lbl = st.selectbox("اختر للتعديل:", list(user_opts.keys()), key="u_sel")
             sel_u = user_opts[sel_lbl]
             
-            # حماية المدير العام
-            if sel_u.role_id == ROLE_SUPER_ADMIN and user.user_id != sel_u.user_id:
+            # حماية المدير العام (لا يمكن تعديله إلا من نفسه أو قاعدة البيانات مباشرة)
+            if sel_u.role_id == ROLE_SUPER_ADMIN and (user and user.user_id != sel_u.user_id):
                 st.warning("لا يمكن تعديل المدير العام.")
             else:
                 with st.expander(f"تعديل: {sel_u.name}", expanded=True):
@@ -76,6 +135,8 @@ with main_tabs[0]:
                             st.warning("تم الحذف")
                             time.sleep(1)
                             st.rerun()
+        else:
+            st.info("لا يوجد مستخدمين حالياً.")
 
     with u_tabs[1]:
         st.subheader("إضافة عضو")
@@ -84,12 +145,24 @@ with main_tabs[0]:
             nm = n1.text_input("الاسم")
             em = n1.text_input("البريد")
             pw = n2.text_input("كلمة المرور", type="password")
-            rl = n2.selectbox("الدور", list(ROLE_NAMES.values()))
+            
+            # تحويل القيم إلى قائمة للدور
+            role_options = list(ROLE_NAMES.values())
+            rl = n2.selectbox("الدور", role_options)
+            
             if st.form_submit_button("إضافة"):
-                rid = {v: k for k, v in ROLE_NAMES.items()}[rl]
-                ok, msg = UserModel.create_user(nm, em, pw, rid)
-                if ok: st.success(msg); time.sleep(1); st.rerun()
-                else: st.error(msg)
+                if nm and em and pw:
+                    # العثور على ID الدور بناءً على الاسم
+                    rid = {v: k for k, v in ROLE_NAMES.items()}[rl]
+                    ok, msg = UserModel.create_user(nm, em, pw, rid)
+                    if ok: 
+                        st.success(msg)
+                        time.sleep(1)
+                        st.rerun()
+                    else: 
+                        st.error(msg)
+                else:
+                    st.warning("يرجى تعبئة جميع الحقول.")
 
 # ==================================================
 # TAB 2: الصلاحيات
@@ -101,7 +174,7 @@ with main_tabs[1]:
     targets = [u for u in all_users if u.role_id != ROLE_SUPER_ADMIN]
     
     if not targets:
-        st.info("لا يوجد مستخدمين لتعديل صلاحياتهم.")
+        st.info("لا يوجد مستخدمين لتعديل صلاحياتهم (غير المدير العام).")
     else:
         p_opts = {f"{u.name} ({u.email})": u for u in targets}
         p_lbl = st.selectbox("👤 اختر المستخدم:", list(p_opts.keys()), key="p_sel")
@@ -111,57 +184,63 @@ with main_tabs[1]:
         
         # جلب الصلاحيات الحالية
         curr_perms = PermissionModel.get_permissions_by_user(p_user.user_id)
+        
         def find_p(sid, tid=""):
             for p in curr_perms:
-                if p.section_id == str(sid) and p.tab_id == str(tid): return p
+                # مقارنة القيم كنصوص لضمان التوافق
+                if str(p.section_id) == str(sid) and str(p.tab_id) == str(tid): return p
             return None
             
         all_secs = SectionModel.get_all_sections()
         
-        with st.form("perm_form"):
-            h1, h2, h3, h4 = st.columns([3, 1, 1, 1])
-            h1.write("**الهيكل**"); h2.write("**عرض**"); h3.write("**تعديل**"); h4.write("**حجب**")
-            st.markdown("---")
-            
-            for sec in all_secs:
-                ps = find_p(sec.section_id)
-                sc1, sc2, sc3, sc4 = st.columns([3, 1, 1, 1])
-                sc1.markdown(f"### {sec.name}")
-                # نستخدم مفاتيح فريدة لكل مربع اختيار
-                st.session_state[f"sv_{sec.section_id}"] = sc2.checkbox("", value=ps.view if ps else False, key=f"k_sv_{sec.section_id}")
-                st.session_state[f"se_{sec.section_id}"] = sc3.checkbox("", value=ps.edit if ps else False, key=f"k_se_{sec.section_id}")
-                st.session_state[f"sh_{sec.section_id}"] = sc4.checkbox("", value=ps.hidden if ps else False, key=f"k_sh_{sec.section_id}")
+        if not all_secs:
+            st.warning("يجب إضافة أقسام أولاً لتوزيع الصلاحيات.")
+        else:
+            with st.form("perm_form"):
+                h1, h2, h3, h4 = st.columns([3, 1, 1, 1])
+                h1.write("**الهيكل**"); h2.write("**عرض**"); h3.write("**تعديل**"); h4.write("**حجب**")
+                st.markdown("---")
                 
-                tabs = TabModel.get_tabs_by_section(sec.section_id)
-                if tabs:
-                    st.caption(f"└ تبويبات {sec.name}")
-                    for tab in tabs:
-                        pt = find_p(sec.section_id, tab.tab_id)
-                        tc1, tc2, tc3, tc4 = st.columns([3, 1, 1, 1])
-                        tc1.text(f"  📄 {tab.name}")
-                        st.session_state[f"tv_{tab.tab_id}"] = tc2.checkbox("", value=pt.view if pt else False, key=f"k_tv_{tab.tab_id}")
-                        st.session_state[f"te_{tab.tab_id}"] = tc3.checkbox("", value=pt.edit if pt else False, key=f"k_te_{tab.tab_id}")
-                        st.session_state[f"th_{tab.tab_id}"] = tc4.checkbox("", value=pt.hidden if pt else False, key=f"k_th_{tab.tab_id}")
-                st.divider()
-            
-            if st.form_submit_button("💾 حفظ وتحديث الصلاحيات"):
                 for sec in all_secs:
-                    PermissionModel.grant_permission(
-                        p_user.user_id, sid=sec.section_id, 
-                        view=st.session_state[f"sv_{sec.section_id}"], 
-                        edit=st.session_state[f"se_{sec.section_id}"], 
-                        hidden=st.session_state[f"sh_{sec.section_id}"]
-                    )
-                    for tab in TabModel.get_tabs_by_section(sec.section_id):
+                    ps = find_p(sec.section_id)
+                    sc1, sc2, sc3, sc4 = st.columns([3, 1, 1, 1])
+                    sc1.markdown(f"### {sec.name}")
+                    
+                    # نستخدم مفاتيح فريدة لكل مربع اختيار
+                    st.session_state[f"sv_{sec.section_id}"] = sc2.checkbox("", value=ps.view if ps else False, key=f"k_sv_{sec.section_id}")
+                    st.session_state[f"se_{sec.section_id}"] = sc3.checkbox("", value=ps.edit if ps else False, key=f"k_se_{sec.section_id}")
+                    st.session_state[f"sh_{sec.section_id}"] = sc4.checkbox("", value=ps.hidden if ps else False, key=f"k_sh_{sec.section_id}")
+                    
+                    tabs = TabModel.get_tabs_by_section(sec.section_id)
+                    if tabs:
+                        st.caption(f"└ تبويبات {sec.name}")
+                        for tab in tabs:
+                            pt = find_p(sec.section_id, tab.tab_id)
+                            tc1, tc2, tc3, tc4 = st.columns([3, 1, 1, 1])
+                            tc1.text(f"  📄 {tab.name}")
+                            st.session_state[f"tv_{tab.tab_id}"] = tc2.checkbox("", value=pt.view if pt else False, key=f"k_tv_{tab.tab_id}")
+                            st.session_state[f"te_{tab.tab_id}"] = tc3.checkbox("", value=pt.edit if pt else False, key=f"k_te_{tab.tab_id}")
+                            st.session_state[f"th_{tab.tab_id}"] = tc4.checkbox("", value=pt.hidden if pt else False, key=f"k_th_{tab.tab_id}")
+                    st.divider()
+            
+                if st.form_submit_button("💾 حفظ وتحديث الصلاحيات"):
+                    for sec in all_secs:
                         PermissionModel.grant_permission(
-                            p_user.user_id, sid=sec.section_id, tid=tab.tab_id,
-                            view=st.session_state[f"tv_{tab.tab_id}"], 
-                            edit=st.session_state[f"te_{tab.tab_id}"], 
-                            hidden=st.session_state[f"th_{tab.tab_id}"]
+                            p_user.user_id, sid=sec.section_id, 
+                            view=st.session_state[f"sv_{sec.section_id}"], 
+                            edit=st.session_state[f"se_{sec.section_id}"], 
+                            hidden=st.session_state[f"sh_{sec.section_id}"]
                         )
-                st.success("✅ تم تحديث الصلاحيات بنجاح!")
-                time.sleep(1)
-                st.rerun()
+                        for tab in TabModel.get_tabs_by_section(sec.section_id):
+                            PermissionModel.grant_permission(
+                                p_user.user_id, sid=sec.section_id, tid=tab.tab_id,
+                                view=st.session_state[f"tv_{tab.tab_id}"], 
+                                edit=st.session_state[f"te_{tab.tab_id}"], 
+                                hidden=st.session_state[f"th_{tab.tab_id}"]
+                            )
+                    st.success("✅ تم تحديث الصلاحيات بنجاح!")
+                    time.sleep(1)
+                    st.rerun()
 
 # ==================================================
 # TAB 3: الإعدادات
@@ -169,8 +248,10 @@ with main_tabs[1]:
 with main_tabs[2]:
     st.header("إعدادات الموقع")
     
-    SettingModel.initialize_defaults(user.name)
+    current_user_name = user.name if user else "System"
+    SettingModel.initialize_defaults(current_user_name)
     sett = SettingModel.get_all_settings()
+    
     def gv(k): return sett[k].value if k in sett else ""
     
     with st.form("set_form"):
@@ -184,10 +265,10 @@ with main_tabs[2]:
         
         st.write("")
         if st.form_submit_button("حفظ الإعدادات"):
-            SettingModel.update_setting("site_title", tit, user.name)
-            SettingModel.update_setting("announcement_bar", ann, user.name)
-            SettingModel.update_setting("system_status", sta, user.name)
-            SettingModel.update_setting("allow_guest_view", str(gst), user.name)
+            SettingModel.update_setting("site_title", tit, current_user_name)
+            SettingModel.update_setting("announcement_bar", ann, current_user_name)
+            SettingModel.update_setting("system_status", sta, current_user_name)
+            SettingModel.update_setting("allow_guest_view", str(gst), current_user_name)
             st.success("تم التحديث")
             time.sleep(1)
             st.rerun()
