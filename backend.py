@@ -10,6 +10,7 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload
 from gspread.exceptions import APIError, WorksheetNotFound
+from streamlit_option_menu import option_menu
 
 # ==========================================
 # 1. الثوابت (Constants)
@@ -140,24 +141,30 @@ def update_field(sheet_name, id_column, id_value, target_column, new_value):
     return _execute_with_retry(_upd) is True
 
 def upload_file_to_cloud(file_obj, filename, mime_type):
-    """رفع ملف إلى Google Drive (يدعم Shared Drives)"""
+    """رفع ملف إلى Google Drive (مخصص للمجلدات المشتركة Shared Drives)"""
     creds = _get_creds_object()
     if not creds: return None, None
     try:
+        # قراءة معرف المجلد من ملف الأسرار
         fid = st.secrets["google"].get("drive_folder_id")
         service = build('drive', 'v3', credentials=creds)
         
         safe_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}"
-        meta = {'name': safe_name, 'parents': [fid]}
+        
+        # إعداد الميتاداتا
+        file_metadata = {
+            'name': safe_name,
+            'parents': [fid]
+        }
         
         media = MediaIoBaseUpload(file_obj, mimetype=mime_type, resumable=True)
         
-        # supportsAllDrives=True ضروري للمجلدات المشتركة
+        # تنفيذ الرفع مع تفعيل دعم Shared Drives
         f = service.files().create(
-            body=meta, 
-            media_body=media, 
+            body=file_metadata,
+            media_body=media,
             fields='id, webViewLink',
-            supportsAllDrives=True
+            supportsAllDrives=True  # <--- هذا السطر هو الأهم للمجلدات المشتركة
         ).execute()
         
         return f.get('id'), f.get('webViewLink')
@@ -165,7 +172,7 @@ def upload_file_to_cloud(file_obj, filename, mime_type):
     except Exception as e:
         error_msg = str(e)
         if "storageQuotaExceeded" in error_msg:
-             st.error("❌ خطأ: مساحة التخزين ممتلئة. تأكد من أنك رفعت الملف إلى مجلد مشترك (Shared Drive) وأضفت إيميل البوت كـ Content Manager.")
+             st.error("❌ خطأ: مساحة التخزين ممتلئة. تأكد من أن drive_folder_id في ملف الأسرار يشير إلى Shared Drive وأن البوت مضاف بصلاحية Content Manager.")
         else:
              st.error(f"Upload Error: {error_msg}")
         return None, None
@@ -347,7 +354,6 @@ def apply_custom_style():
 
 def render_sidebar():
     """رسم القائمة الجانبية"""
-    from streamlit_option_menu import option_menu
     user = get_current_user()
     with st.sidebar:
         if user:
