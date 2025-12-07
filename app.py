@@ -2,7 +2,7 @@ import streamlit as st
 import time
 
 # ==========================================
-# 1. إعدادات الصفحة (يجب أن تكون دائماً في أول سطر)
+# 1. إعدادات الصفحة (يجب أن تكون أول سطر دائماً)
 # ==========================================
 st.set_page_config(
     page_title="المنصة المركزية لإدارة المحتوى",
@@ -14,41 +14,54 @@ st.set_page_config(
 # ==========================================
 # 2. الاستدعاءات (Imports)
 # ==========================================
-# ملاحظة: نفترض وجود المجلدات core و ui كما هو في نسختك الأصلية
 try:
+    # ملاحظة: تأكد من أن لديك الملفات core/auth.py و ui/layout.py
+    # إذا لم تكن موجودة، ستحتاج لإنشائها أو تعديل هذه الأسطر
     from core.auth import login_user, get_current_user
     from ui.layout import render_sidebar, render_footer
-    # استدعاء المودلز لجلب الإحصائيات (تأكد من وجود backend.py)
+    
+    # استدعاء المودلز من ملف backend.py الذي أنشأناه سابقاً
     from backend import UserModel, SectionModel, ContentModel, ROLE_NAMES
 except ImportError as e:
-    st.error(f"هناك ملفات مفقودة في المشروع. تأكد من وجود core/auth.py و backend.py. \n\nError: {e}")
+    st.error(f"""
+    ❌ هناك ملفات مفقودة في المشروع.
+    
+    تأكد من وجود المجلدات والملفات التالية:
+    1. `backend.py` (في المجلد الرئيسي)
+    2. `core/auth.py`
+    3. `ui/layout.py`
+    
+    تفاصيل الخطأ: {e}
+    """)
     st.stop()
 
 # ==========================================
-# 3. دوال مساعدة (Optimized Helpers)
+# 3. دوال مساعدة (Helpers)
 # ==========================================
 
-# تحسين الأداء: تخزين الإحصائيات في الكاش لمدة 60 ثانية لتقليل الضغط على قاعدة البيانات/Google Sheets
+# تخزين الإحصائيات في الكاش لمدة 60 ثانية لتقليل استهلاك قوقل شيت
 @st.cache_data(ttl=60)
 def load_dashboard_stats():
     """جلب إحصائيات سريعة للوحة التحكم"""
     try:
+        # جلب المستخدمين
         users = UserModel.get_all_users()
         active_users = len([u for u in users if u.status == 'active'])
         
-        # محاولة جلب الأقسام والمحتوى إذا كانت الدوال موجودة
+        # جلب الأقسام (مع معالجة الأخطاء في حال كان الجدول فارغاً)
         try:
-            sections_count = len(SectionModel.get_all_sections())
+            sections = SectionModel.get_all_sections()
+            sections_count = len(sections)
         except:
             sections_count = 0
             
-        try:
-            # افتراض وجود دالة لجلب كل المحتوى أو جلبه بطريقة أخرى
-            # هنا مثال بسيط، يمكن تعديله حسب هيكلية ContentModel لديك
-            content_count = 0 
-            # content_count = len(ContentModel.get_all_content()) 
-        except:
-            content_count = 0
+        # جلب المحتوى (مثال: نعد المحتوى بناءً على الأقسام أو دالة مخصصة)
+        # ملاحظة: يمكنك تفعيل هذا الجزء إذا أضفت دالة get_all_content في ContentModel
+        content_count = 0 
+        # try:
+        #     content_count = len(ContentModel.get_all_content())
+        # except:
+        #     content_count = 0
             
         return {
             "total_users": len(users),
@@ -58,10 +71,11 @@ def load_dashboard_stats():
         }
     except Exception as e:
         # في حال حدوث خطأ في الاتصال، نعيد أصفار لتجنب توقف الموقع
+        print(f"Error loading stats: {e}")
         return {"total_users": 0, "active_users": 0, "sections": 0, "content": 0}
 
 def init_session():
-    """تهيئة متغيرات الجلسة"""
+    """تهيئة متغيرات الجلسة الأساسية"""
     if 'logged_in' not in st.session_state:
         st.session_state['logged_in'] = False
 
@@ -70,7 +84,17 @@ def init_session():
 # ==========================================
 
 def main():
+    # تطبيق اتجاه النص لليمين (RTL) للغة العربية
+    st.markdown("""
+    <style>
+        .stApp { direction: rtl; }
+        .stMarkdown, .stText, .stHeader, .stSubheader { text-align: right; }
+    </style>
+    """, unsafe_allow_html=True)
+
     init_session()
+    
+    # محاولة جلب المستخدم الحالي
     user = get_current_user()
 
     # --- السيناريو 1: المستخدم غير مسجل دخول ---
@@ -80,7 +104,7 @@ def main():
         with col2:
             st.write("") 
             st.write("") 
-            st.markdown("## 🔐 تسجيل الدخول للنظام")
+            st.markdown("<h2 style='text-align: center;'>🔐 تسجيل الدخول للنظام</h2>", unsafe_allow_html=True)
             st.info("يرجى إدخال بيانات حسابك للمتابعة")
             
             with st.form("login_form"):
@@ -96,7 +120,7 @@ def main():
                             success, msg = login_user(email, password)
                             if success:
                                 st.success(msg)
-                                time.sleep(0.5) # مهلة بسيطة ليقرأ المستخدم الرسالة
+                                time.sleep(0.5)
                                 st.rerun()
                             else:
                                 st.error(msg)
@@ -116,7 +140,6 @@ def main():
         st.markdown("---")
         
         # 3. إحصائيات النظام (Dashboard)
-        # نستخدم الدالة المحسنة (Cached)
         stats = load_dashboard_stats()
         
         c1, c2, c3, c4 = st.columns(4)
@@ -127,7 +150,8 @@ def main():
         with c3:
             st.metric("📄 المحتوى المنشور", stats["content"] if stats["content"] > 0 else "-")
         with c4:
-            st.metric("📅 تاريخ تسجيلك", user.created_at[:10] if hasattr(user, 'created_at') else "-")
+            created_date = user.created_at[:10] if hasattr(user, 'created_at') and user.created_at else "-"
+            st.metric("📅 تاريخ تسجيلك", created_date)
 
         st.markdown("---")
         
@@ -149,8 +173,9 @@ def main():
                 if st.button("الذهاب للمكتبة", key="btn_go_media", use_container_width=True):
                     st.switch_page("pages/03_Media_Upload.py")
         
-        # إظهار زر الإدارة فقط للمدراء
-        if user.role_id in [1, 2]: # Assuming 1 & 2 are Admin roles based on constants
+        # إظهار زر الإدارة فقط للمدراء (Super Admin & Admin)
+        # نفترض أن 1=المدير العام، 2=مدير
+        if user.role_id in [1, 2]: 
             with qc3:
                 with st.container(border=True):
                     st.markdown("#### ⚙️ إدارة النظام")
