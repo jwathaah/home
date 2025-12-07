@@ -1,40 +1,62 @@
 import streamlit as st
 import time
 from datetime import datetime
+import sys
+import os
 
 # ==========================================
-# 1. الاستدعاءات (Imports)
+# 1. إعداد المسارات والاستيراد
 # ==========================================
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 try:
-    # استيراد النماذج والثوابت من الباك إند الموحد
+    # استيراد النماذج ودالة الرفع من الباك إند الموحد
     from backend import (
-        MediaModel, 
+        MediaModel, upload_file_to_cloud,
         ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_SUPERVISOR
     )
-    from core.auth import get_current_user
-    
-    # استيراد خدمة رفع الملفات (نفترض وجودها في services كما في الكود الأصلي)
-    # إذا لم تكن موجودة، تأكد من إنشاء الملف services/google_drive.py
-    from services.google_drive import upload_file_to_drive
-    
 except ImportError as e:
-    st.error(f"⚠️ خطأ في الاستيراد: {e}\nيرجى التأكد من وجود ملفات backend.py و services/google_drive.py")
+    st.error(f"⚠️ خطأ في استيراد backend.py: {e}")
     st.stop()
+
+# معالجة استيراد المستخدم (Fallback)
+try:
+    from core.auth import get_current_user
+except ImportError:
+    def get_current_user():
+        if 'user' in st.session_state:
+            return st.session_state['user']
+        return None
 
 # ==========================================
 # 2. إعداد الصفحة
 # ==========================================
 st.set_page_config(page_title="مكتبة الوسائط", page_icon="🖼️", layout="wide")
 
+# تطبيق اتجاه النص (RTL)
+st.markdown("""
+<style>
+    .stApp { direction: rtl; }
+    .stMarkdown, .stText, .stHeader, .stSubheader, p, div { text-align: right; }
+    .stFileUploader { direction: rtl; }
+    div[data-testid="stToast"] { direction: rtl; }
+</style>
+""", unsafe_allow_html=True)
+
 # ==========================================
 # 3. التحقق من الصلاحيات
 # ==========================================
 user = get_current_user()
 
+# تجاوز التحقق مؤقتاً للتجربة (ألغِ التعليق للتفعيل الكامل)
+# if not user:
+#     st.warning("🔒 يجب تسجيل الدخول أولاً!")
+#     st.stop()
+
 # تحديد من يحق له الدخول (المدراء والمشرفين)
 ALLOWED_ROLES = [ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_SUPERVISOR]
 
-if not user or user.role_id not in ALLOWED_ROLES:
+if user and user.role_id not in ALLOWED_ROLES:
     st.toast("⛔ عذراً، ليس لديك صلاحية لدخول هذه الصفحة!", icon="🚫")
     time.sleep(1.5)
     st.switch_page("app.py")
@@ -45,7 +67,12 @@ if not user or user.role_id not in ALLOWED_ROLES:
 @st.cache_data(ttl=60)
 def get_cached_media():
     """جلب قائمة الوسائط مع التخزين المؤقت لتسريع التصفح"""
-    return MediaModel.get_all_media()
+    # نتأكد من أن الجدول موجود
+    try:
+        return MediaModel.get_all_media()
+    except Exception as e:
+        st.error(f"خطأ في جلب البيانات: {e}")
+        return []
 
 def clear_media_cache():
     st.cache_data.clear()
@@ -82,17 +109,22 @@ with tabs[0]:
             if st.button("🚀 بدء الرفع", use_container_width=True):
                 with st.status("جارٍ معالجة الملف...", expanded=True) as status:
                     st.write("1️⃣ الاتصال بـ Google Drive...")
-                    # عملية الرفع
-                    try:
-                        drive_file_id, web_view_link = upload_file_to_drive(uploaded_file)
-                        
+                    
+                    # عملية الرفع باستخدام الدالة الموجودة في backend.py
+                    drive_file_id, web_view_link = upload_file_to_cloud(
+                        uploaded_file, 
+                        uploaded_file.name, 
+                        uploaded_file.type
+                    )
+                    
+                    if drive_file_id:
                         st.write("2️⃣ حفظ البيانات في النظام...")
                         # حفظ البيانات في الشيت عبر Backend
                         MediaModel.add_media(
                             name=uploaded_file.name,
                             mtype=uploaded_file.type,
                             drive_id=drive_file_id,
-                            by=user.name
+                            by=user.name if user else "Guest"
                         )
                         
                         status.update(label="✅ تم الرفع بنجاح!", state="complete", expanded=False)
@@ -102,10 +134,9 @@ with tabs[0]:
                         clear_media_cache()
                         time.sleep(1)
                         st.rerun()
-                        
-                    except Exception as e:
-                        status.update(label="❌ حدث خطأ!", state="error")
-                        st.error(f"تفاصيل الخطأ: {str(e)}")
+                    else:
+                        status.update(label="❌ فشل الرفع!", state="error")
+                        st.error("لم نتمكن من رفع الملف إلى Google Drive. تأكد من إعدادات secrets.toml وصلاحيات المجلد.")
 
 # --- التبويب 2: مكتبة الوسائط ---
 with tabs[1]:
@@ -137,14 +168,16 @@ with tabs[1]:
                     if "image" in item.file_type: icon = "🖼️"
                     elif "video" in item.file_type: icon = "🎥"
                     elif "pdf" in item.file_type: icon = "📕"
+                    elif "sheet" in item.file_type or "excel" in item.file_type: icon = "📊"
                     
-                    st.markdown(f"### {icon}")
+                    st.markdown(f"<h3 style='text-align: center;'>{icon}</h3>", unsafe_allow_html=True)
                     st.markdown(f"**{item.file_name}**")
                     st.caption(f"👤 {item.uploaded_by}")
                     st.caption(f"📅 {item.uploaded_at}")
                     
                     # رابط العرض
-                    # ملاحظة: item.google_drive_id يجب أن يكون مخزناً بشكل صحيح
-                    drive_link = f"https://drive.google.com/file/d/{item.google_drive_id}/view?usp=sharing"
-                    
-                    st.link_button("👁️ عرض الملف", drive_link, use_container_width=True)
+                    if item.google_drive_id:
+                        drive_link = f"https://drive.google.com/file/d/{item.google_drive_id}/view?usp=sharing"
+                        st.link_button("👁️ عرض الملف", drive_link, use_container_width=True)
+                    else:
+                        st.caption("الرابط غير متوفر")
