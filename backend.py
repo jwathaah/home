@@ -139,13 +139,29 @@ def upload_file_to_cloud(file_obj, filename, mime_type):
     try:
         fid = st.secrets["google"].get("drive_folder_id")
         service = build('drive', 'v3', credentials=creds)
+        
         safe_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}"
         meta = {'name': safe_name, 'parents': [fid]}
+        
         media = MediaIoBaseUpload(file_obj, mimetype=mime_type, resumable=True)
-        f = service.files().create(body=meta, media_body=media, fields='id, webViewLink').execute()
+        
+        # التعديل هنا: إضافة supportsAllDrives=True
+        f = service.files().create(
+            body=meta, 
+            media_body=media, 
+            fields='id, webViewLink',
+            supportsAllDrives=True
+        ).execute()
+        
         return f.get('id'), f.get('webViewLink')
+        
     except Exception as e:
-        st.error(str(e)); return None, None
+        error_msg = str(e)
+        if "storageQuotaExceeded" in error_msg:
+             st.error("❌ خطأ: مساحة التخزين ممتلئة. تأكد من مشاركة مجلد الدرايف مع إيميل الـ Service Account بصلاحية Editor.")
+        else:
+             st.error(f"Upload Error: {error_msg}")
+        return None, None
 
 def generate_uuid(): return str(uuid.uuid4())
 
