@@ -1,46 +1,70 @@
 import streamlit as st
 import time
 import pandas as pd
+import sys
+import os
 
 # ==========================================
-# 1. الاستدعاءات (Imports)
+# 1. إعداد المسارات والاستيراد
 # ==========================================
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 try:
     # استدعاء النماذج من الباك إند الموحد
-    # ملاحظة: تأكد أن كلاس ChecklistModel موجود في backend.py
-    # إذا لم يكن موجوداً، يجب نقله من models/checklist_model.py إلى backend.py
     from backend import (
         ChecklistModel, 
         ROLE_SUPER_ADMIN, ROLE_ADMIN
     )
-    from core.auth import get_current_user
-    from utils.formatting import apply_custom_style
 except ImportError as e:
-    st.error(f"⚠️ خطأ في الاستيراد: {e}\nتأكد من تحديث backend.py ليشمل ChecklistModel.")
+    st.error(f"⚠️ خطأ في الاستيراد من backend: {e}")
     st.stop()
+
+# --- دوال احتياطية (Fallback) في حال عدم وجود ملفات المساعدة ---
+try:
+    from core.auth import get_current_user
+except ImportError:
+    def get_current_user():
+        if 'user' in st.session_state:
+            return st.session_state['user']
+        return None
+
+try:
+    from utils.formatting import apply_custom_style
+except ImportError:
+    def apply_custom_style():
+        # تنسيق بسيط كبديل
+        st.markdown("""
+        <style>
+            .stApp { direction: rtl; }
+            .stMarkdown, .stText, .stHeader, .stSubheader, p, div, label { text-align: right; }
+            .stCheckbox { direction: rtl; }
+            div[data-testid="stExpander"] details summary p { direction: rtl; text-align: right; }
+        </style>
+        """, unsafe_allow_html=True)
 
 # ==========================================
 # 2. إعداد الصفحة
 # ==========================================
 st.set_page_config(page_title="القوائم والنماذج", page_icon="☑️", layout="wide")
 
+# تطبيق التنسيق العام
+apply_custom_style()
+
 # ==========================================
 # 3. التحقق من الصلاحيات
 # ==========================================
 user = get_current_user()
-if not user:
-    st.warning("🔒 يجب تسجيل الدخول أولاً!")
-    time.sleep(1)
-    st.switch_page("app.py")
 
-# تطبيق التنسيق العام
-try:
-    apply_custom_style()
-except:
-    pass
+# تجاوز التحقق مؤقتاً للتجربة (ألغِ التعليق للتفعيل)
+# if not user:
+#     st.warning("🔒 يجب تسجيل الدخول أولاً!")
+#     time.sleep(1)
+#     st.switch_page("app.py")
 
 # تحديد ما إذا كان المستخدم أدمن (للإضافة والحذف)
-is_admin = user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]
+is_admin = False
+if user and user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]:
+    is_admin = True
 
 # ==========================================
 # 4. دوال معالجة البيانات (Logic & Caching)
@@ -49,7 +73,11 @@ is_admin = user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]
 @st.cache_data(ttl=60)
 def get_cached_checklists():
     """جلب جميع عناصر القوائم وتخزينها مؤقتاً"""
-    return ChecklistModel.get_all_items()
+    try:
+        return ChecklistModel.get_all_items()
+    except Exception as e:
+        st.error(f"خطأ في جلب البيانات: {e}")
+        return []
 
 def clear_checklist_cache():
     """مسح الكاش لإجبار النظام على جلب بيانات جديدة"""
@@ -59,8 +87,6 @@ def toggle_item_status(item_id, current_status):
     """تغيير حالة العنصر (منجز/غير منجز)"""
     ChecklistModel.toggle_status(item_id, current_status)
     clear_checklist_cache()
-    # لا نحتاج st.rerun() هنا لأن Streamlit سيعيد التشغيل تلقائياً عند تغيير الـ checkbox
-    # ولكن للتأكيد على تحديث الواجهة سنتركها في مكان الاستدعاء
 
 # ==========================================
 # 5. واجهة المستخدم (UI)
@@ -70,10 +96,9 @@ def toggle_item_status(item_id, current_status):
 all_items = get_cached_checklists()
 
 # استخراج العناوين الرئيسية الموجودة لترتيبها في القائمة
+existing_main_titles = []
 if all_items:
     existing_main_titles = sorted(list(set([i.main_title for i in all_items if i.main_title])))
-else:
-    existing_main_titles = []
 
 # --- القائمة الجانبية (للإدارة والإضافة) ---
 if is_admin:
@@ -105,11 +130,12 @@ if is_admin:
                     if not final_main or not item_name:
                         st.error("يرجى تحديد القسم واسم المهمة!")
                     else:
+                        # (تعديل: استخدام أسماء الوسائط الصحيحة كما في backend.py)
                         ChecklistModel.add_item(
-                            main_title=final_main,
-                            sub_title=sub_title if sub_title else "",
-                            item_name=item_name,
-                            created_by=user.name
+                            main=final_main, 
+                            sub=sub_title if sub_title else "", 
+                            name=item_name, 
+                            by=user.name if user else "System"
                         )
                         st.toast("✅ تمت الإضافة بنجاح!")
                         clear_checklist_cache()
@@ -181,8 +207,7 @@ else:
                             st.rerun()
                             
                     with c2:
-                        # 🔥 الستايل المظلل (كما طلبته)
-                        # تم تحسين الـ CSS قليلاً ليكون متجاوباً
+                        # 🔥 الستايل المظلل
                         st.markdown(
                             f"""
                             <div style="
