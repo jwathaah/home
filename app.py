@@ -12,7 +12,7 @@ st.set_page_config(
 
 # 2. التحقق من حالة الدخول
 if 'logged_in' not in st.session_state:
-    st.session_state['logged_in'] = False
+    s.session_state['logged_in'] = False
 
 user = get_current_user()
 
