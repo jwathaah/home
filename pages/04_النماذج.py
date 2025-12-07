@@ -1,162 +1,212 @@
 import streamlit as st
 import time
-from models.checklist_model import ChecklistModel
-from core.auth import get_current_user
-from core.constants import ROLE_SUPER_ADMIN, ROLE_ADMIN
-from utils.formatting import apply_custom_style
+import pandas as pd
 
-# 1. إعداد الصفحة
+# ==========================================
+# 1. الاستدعاءات (Imports)
+# ==========================================
+try:
+    # استدعاء النماذج من الباك إند الموحد
+    # ملاحظة: تأكد أن كلاس ChecklistModel موجود في backend.py
+    # إذا لم يكن موجوداً، يجب نقله من models/checklist_model.py إلى backend.py
+    from backend import (
+        ChecklistModel, 
+        ROLE_SUPER_ADMIN, ROLE_ADMIN
+    )
+    from core.auth import get_current_user
+    from utils.formatting import apply_custom_style
+except ImportError as e:
+    st.error(f"⚠️ خطأ في الاستيراد: {e}\nتأكد من تحديث backend.py ليشمل ChecklistModel.")
+    st.stop()
+
+# ==========================================
+# 2. إعداد الصفحة
+# ==========================================
 st.set_page_config(page_title="القوائم والنماذج", page_icon="☑️", layout="wide")
 
+# ==========================================
+# 3. التحقق من الصلاحيات
+# ==========================================
 user = get_current_user()
 if not user:
-    st.toast("🔒 سجل دخولك أولاً")
+    st.warning("🔒 يجب تسجيل الدخول أولاً!")
     time.sleep(1)
     st.switch_page("app.py")
 
-apply_custom_style()
+# تطبيق التنسيق العام
+try:
+    apply_custom_style()
+except:
+    pass
+
+# تحديد ما إذا كان المستخدم أدمن (للإضافة والحذف)
 is_admin = user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]
 
-# --- دوال مساعدة ---
-def toggle_item(item_id, current_status):
+# ==========================================
+# 4. دوال معالجة البيانات (Logic & Caching)
+# ==========================================
+
+@st.cache_data(ttl=60)
+def get_cached_checklists():
+    """جلب جميع عناصر القوائم وتخزينها مؤقتاً"""
+    return ChecklistModel.get_all_items()
+
+def clear_checklist_cache():
+    """مسح الكاش لإجبار النظام على جلب بيانات جديدة"""
+    st.cache_data.clear()
+
+def toggle_item_status(item_id, current_status):
+    """تغيير حالة العنصر (منجز/غير منجز)"""
     ChecklistModel.toggle_status(item_id, current_status)
-    st.cache_resource.clear()
-    st.rerun()
+    clear_checklist_cache()
+    # لا نحتاج st.rerun() هنا لأن Streamlit سيعيد التشغيل تلقائياً عند تغيير الـ checkbox
+    # ولكن للتأكيد على تحديث الواجهة سنتركها في مكان الاستدعاء
+
+# ==========================================
+# 5. واجهة المستخدم (UI)
+# ==========================================
 
 # جلب البيانات
-all_items = ChecklistModel.get_all_items()
-existing_main_titles = sorted(list(set([i.main_title for i in all_items])))
+all_items = get_cached_checklists()
 
-# ==========================================
-# 1. القائمة الجانبية (ذكية)
-# ==========================================
+# استخراج العناوين الرئيسية الموجودة لترتيبها في القائمة
+if all_items:
+    existing_main_titles = sorted(list(set([i.main_title for i in all_items if i.main_title])))
+else:
+    existing_main_titles = []
+
+# --- القائمة الجانبية (للإدارة والإضافة) ---
 if is_admin:
     with st.sidebar:
         st.header("⚙️ إدارة القوائم")
-        with st.expander("➕ إنشاء / إضافة بند", expanded=True):
-            with st.form("smart_add_form"):
-                # العنوان الرئيسي
-                main_options = ["✨ قسم جديد..."] + existing_main_titles
-                selected_main = st.selectbox("العنوان الرئيسي", main_options)
+        st.info("يمكنك إضافة مهام جديدة أو أقسام جديدة من هنا.")
+        
+        with st.expander("➕ إضافة بند جديد", expanded=True):
+            with st.form("smart_add_form", clear_on_submit=True):
+                # خيار ذكي: إما اختيار قسم موجود أو إنشاء جديد
+                select_options = ["✨ قسم جديد..."] + existing_main_titles
+                selected_main = st.selectbox("القسم الرئيسي:", select_options)
                 
-                final_main = ""
+                new_main_title = None
                 if selected_main == "✨ قسم جديد...":
-                    final_main = st.text_input("اكتب اسم القسم الجديد", placeholder="مثال: بقالة")
-                else:
-                    final_main = selected_main
+                    new_main_title = st.text_input("اكتب اسم القسم الجديد:")
                 
-                # العنوان الفرعي
-                sub_options = ["✨ فرعي جديد..."]
-                if final_main and final_main != "✨ قسم جديد...":
-                    relevant_subs = sorted(list(set([i.sub_title for i in all_items if i.main_title == final_main])))
-                    sub_options += relevant_subs
+                # العنوان الفرعي (اختياري)
+                sub_title = st.text_input("العنوان الفرعي (اختياري):")
                 
-                selected_sub = st.selectbox("العنوان الفرعي", sub_options)
+                # اسم المهمة
+                item_name = st.text_input("نص المهمة / البند:", placeholder="مثال: مراجعة التقرير الشهري")
                 
-                final_sub = ""
-                if selected_sub == "✨ فرعي جديد...":
-                    final_sub = st.text_input("اكتب العنوان الفرعي", placeholder="مثال: خضار")
-                else:
-                    final_sub = selected_sub
-
-                # اسم البند
-                new_item_name = st.text_input("اسم البند", placeholder="مثال: طماطم")
+                submitted = st.form_submit_button("إضافة", use_container_width=True)
                 
-                if st.form_submit_button("حفظ البند"):
-                    if final_main and final_sub and new_item_name:
-                        ChecklistModel.add_item(final_main, final_sub, new_item_name, user.name)
-                        st.cache_resource.clear()
-                        st.success("تم!")
-                        st.rerun()
+                if submitted:
+                    final_main = new_main_title if (selected_main == "✨ قسم جديد...") else selected_main
+                    
+                    if not final_main or not item_name:
+                        st.error("يرجى تحديد القسم واسم المهمة!")
                     else:
-                        st.warning("البيانات ناقصة")
+                        ChecklistModel.add_item(
+                            main_title=final_main,
+                            sub_title=sub_title if sub_title else "",
+                            item_name=item_name,
+                            created_by=user.name
+                        )
+                        st.toast("✅ تمت الإضافة بنجاح!")
+                        clear_checklist_cache()
+                        time.sleep(1)
+                        st.rerun()
 
-# ==========================================
-# 2. عرض القوائم (التصميم الجديد المظلل)
-# ==========================================
+# --- العرض الرئيسي ---
+st.title("📋 قوائم المهام والنماذج")
+st.markdown("---")
 
 if not all_items:
-    st.info("ابدأ بإضافة أول قسم من القائمة الجانبية.")
-    st.stop()
-
-main_titles = sorted(list(set([item.main_title for item in all_items])))
-tabs = st.tabs(main_titles)
-
-for i, main_title in enumerate(main_titles):
-    with tabs[i]:
-        section_items = [x for x in all_items if x.main_title == main_title]
-        sub_titles = sorted(list(set([item.sub_title for item in section_items])))
-        
-        for sub_title in sub_titles:
-            # العنوان الفرعي + زر الإضافة السريع
-            col_head, col_add = st.columns([5, 1])
-            col_head.markdown(f"### 🔸 {sub_title}")
+    st.info("📭 لا توجد قوائم مهام حالياً. يمكن للمسؤولين إضافة بنود جديدة من القائمة الجانبية.")
+else:
+    # تجميع البيانات حسب العنوان الرئيسي
+    grouped_data = {}
+    for item in all_items:
+        if item.main_title not in grouped_data:
+            grouped_data[item.main_title] = []
+        grouped_data[item.main_title].append(item)
+    
+    # عرض البيانات
+    for main_title, items in grouped_data.items():
+        with st.expander(f"📌 {main_title}", expanded=True):
             
-            if is_admin:
-                with col_add:
-                    with st.popover("➕ بند"):
-                        with st.form(f"quick_add_{main_title}_{sub_title}"):
-                            st.write(f"إضافة إلى: {sub_title}")
-                            quick_name = st.text_input("اسم البند", key=f"q_in_{main_title}_{sub_title}")
-                            if st.form_submit_button("أضف"):
-                                ChecklistModel.add_item(main_title, sub_title, quick_name, user.name)
-                                st.cache_resource.clear()
-                                st.rerun()
+            # فصل العناصر المنجزة عن غير المنجزة
+            unchecked_items = [i for i in items if not i.is_checked]
+            checked_items = [i for i in items if i.is_checked]
             
-            # الفلترة
-            my_items = [x for x in section_items if x.sub_title == sub_title]
-            unchecked_items = [x for x in my_items if not x.is_checked]
-            checked_items = [x for x in my_items if x.is_checked]
-            
-            # 1. غير المنجز (يظهر كنص عادي نظيف)
-            if not unchecked_items and not checked_items:
-                st.caption("لا توجد بنود.")
-            
+            # 1. عرض العناصر غير المنجزة (To-Do)
             for item in unchecked_items:
                 c1, c2 = st.columns([0.5, 11])
                 with c1:
-                    st.checkbox("done", False, key=f"c_{item.item_id}", label_visibility="collapsed", on_change=toggle_item, args=(item.item_id, False))
-                with c2:
-                    # تصميم بسيط ونظيف لغير المنجز
-                    st.markdown(
-                        f"""<div style="padding: 5px; font-weight: 500;">{item.item_name}</div>""", 
-                        unsafe_allow_html=True
+                    # Checkbox عادي
+                    is_done = st.checkbox(
+                        "done", 
+                        value=False, 
+                        key=f"check_{item.item_id}", 
+                        label_visibility="collapsed"
                     )
                     
-                    if is_admin:
-                         if st.button("🗑", key=f"d_{item.item_id}"):
-                             ChecklistModel.delete_item(item.item_id)
-                             st.cache_resource.clear()
-                             st.rerun()
+                    if is_done: # إذا ضغط المستخدم عليه
+                        toggle_item_status(item.item_id, False) # False تعني الحالة الحالية كانت False
+                        st.rerun()
+                        
+                with c2:
+                    # عرض النص بشكل عادي
+                    if item.sub_title:
+                        st.markdown(f"**{item.sub_title}:** {item.item_name}")
+                    else:
+                        st.write(item.item_name)
 
-            # 2. المنجز (يظهر مظللاً بخلفية رمادية خفيفة بدلاً من الشطب)
+            # 2. عرض العناصر المنجزة (Done) بستايل خاص
             if checked_items:
-                if unchecked_items: st.divider()
+                if unchecked_items: 
+                    st.divider() # فاصل جمالي إذا كان هناك عناصر مختلطة
+                
                 for item in checked_items:
-                    c1, c2 = st.columns([0.5, 11])
+                    c1, c2, c3 = st.columns([0.5, 10.5, 1])
                     with c1:
-                        st.checkbox("undone", True, key=f"c_{item.item_id}", label_visibility="collapsed", on_change=toggle_item, args=(item.item_id, True))
+                        # Checkbox للتراجع (Undo)
+                        undo = st.checkbox(
+                            "undone", 
+                            value=True, 
+                            key=f"check_{item.item_id}", 
+                            label_visibility="collapsed"
+                        )
+                        if not undo: # إذا أزال الصح
+                            toggle_item_status(item.item_id, True)
+                            st.rerun()
+                            
                     with c2:
-                        # 🔥 التعديل هنا: ستايل مظلل (Shaded Style)
+                        # 🔥 الستايل المظلل (كما طلبته)
+                        # تم تحسين الـ CSS قليلاً ليكون متجاوباً
                         st.markdown(
                             f"""
                             <div style="
                                 background-color: #f0f2f6; 
-                                color: #666; 
+                                color: #888; 
                                 padding: 8px 12px; 
                                 border-radius: 8px; 
                                 border: 1px solid #e0e0e0;
+                                text-decoration: line-through;
+                                display: flex;
+                                align-items: center;
                             ">
                                 ✅ {item.item_name}
                             </div>
-                            """,
+                            """, 
                             unsafe_allow_html=True
                         )
-                        
+                    
+                    # زر الحذف (للأدمن فقط)
+                    with c3:
                         if is_admin:
-                             if st.button("🗑", key=f"d_{item.item_id}"):
-                                 ChecklistModel.delete_item(item.item_id)
-                                 st.cache_resource.clear()
-                                 st.rerun()
-            
-            st.write("") # مسافة
+                            if st.button("🗑", key=f"del_{item.item_id}", help="حذف هذا البند"):
+                                ChecklistModel.delete_item(item.item_id)
+                                st.toast("تم الحذف")
+                                clear_checklist_cache()
+                                time.sleep(0.5)
+                                st.rerun()
