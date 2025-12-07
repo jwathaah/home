@@ -99,18 +99,30 @@ def render_navbar(current_page=None):
                 rname = ROLE_NAMES.get(user.role_id, "مستخدم")
                 st.markdown(f"**👤 {user.name}** | <span style='color:gray; font-size:0.9em'>{rname}</span>", unsafe_allow_html=True)
             with c2:
+                # إذا كان مديراً، يظهر له زر واحد "إدارة النظام" بدلاً من زرين
                 if user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]:
-                    cc1, cc2 = st.columns(2)
-                    with cc1: st.page_link("pages/06_اعدادات_الموقع.py", label="الإعدادات", icon="⚙️")
-                    with cc2: st.page_link("pages/07_المستخدمين.py", label="المستخدمين", icon="👥")
+                    st.page_link("pages/02_ادارة_النظام.py", label="لوحة التحكم والإدارة", icon="⚙️")
             with c3:
                 if st.button("🚪 خروج", use_container_width=True, key="top_nav_logout"): logout_user()
         st.divider()
 
-def render_footer():
-    st.markdown("---")
-    st.markdown("<div style='text-align: center; color: gray;'>© 2025 Smart Home CMS</div>", unsafe_allow_html=True)
+---
 
+### 3. تحديث ملف `app.py` (تعديل القائمة الرئيسية)
+استبدل محتوى ملف `app.py` بهذا الكود الجديد الذي يشير للملف الموحد:
+
+
+http://googleusercontent.com/immersive_entry_chip/1
+
+---
+
+### 4. التنظيف 🗑️
+بعد التأكد من أن الملف الجديد يعمل، يمكنك الآن حذف الملفات التالية من مجلد `pages`:
+* `pages/02_الصلاحيات.py`
+* `pages/06_اعدادات_الموقع.py`
+* `pages/07_المستخدمين.py`
+
+الآن أصبح لديك ملف إدارة واحد قوي وشامل! 🚀
 # ==========================================
 # 4. مشغل الميديا (Media Embedder)
 # ==========================================
