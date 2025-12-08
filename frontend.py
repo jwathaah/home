@@ -15,14 +15,27 @@ from backend import (
 def apply_custom_style():
     style = """
     <style>
-    @import url('[https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap](https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap)');
+    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap');
+    
     html, body, [class*="css"] { font-family: 'Cairo', sans-serif !important; }
     .stApp { direction: rtl; text-align: right; }
     h1, h2, h3, h4, h5, h6, p, div, label, .stMarkdown { text-align: right !important; }
-    section[data-testid="stSidebar"] { display: none; }
+    
+    /* --- حل مشكلة الشريط الجانبي في الجوال --- */
+    /* إخفاء حاوية الشريط الجانبي بالكامل */
+    section[data-testid="stSidebar"] { display: none !important; width: 0px !important; }
+    /* إخفاء زر التحكم (السهم) الذي يظهر لفتح الشريط الجانبي */
+    [data-testid="collapsedControl"] { display: none !important; }
+    /* إخفاء شريط التنقل الافتراضي */
+    div[data-testid="stSidebarNav"] { display: none !important; }
+    /* --------------------------------------- */
+
     section.main > div { max-width: 100% !important; padding-top: 1rem; }
     div[data-testid="column"] button { width: 100%; }
+    
+    /* إخفاء القوائم العلوية الافتراضية لستريم ليت */
     #MainMenu, footer, header { visibility: hidden; }
+    
     div[data-testid="stVerticalBlock"] > div[style*="border"] { border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
     button { font-family: 'Cairo', sans-serif !important; font-weight: 600 !important; }
     
@@ -32,6 +45,7 @@ def apply_custom_style():
         .stButton button { width: 100% !important; border-radius: 12px !important; padding: 0.5rem !important; }
         div[data-testid="stDataFrame"] { width: 100% !important; overflow-x: auto !important; }
     }
+    
     .stTabs [data-baseweb="tab"] { height: 50px; background-color: #f0f2f6; border-radius: 8px; font-weight: 600; }
     .stTabs [aria-selected="true"] { background-color: #ff4b4b !important; color: white !important; }
     div[role="radiogroup"] > label { background: #ffffff; padding: 10px; border-radius: 8px; border: 1px solid #eee; }
@@ -68,19 +82,24 @@ def logout_user():
 def get_current_user():
     cm = get_manager()
     stored_token = cm.get('auth_token')
+    
+    # 1. Check Session State
     if 'user' in st.session_state:
         user = st.session_state['user']
+        # If logged in just now, save cookie
         if st.session_state.get('needs_new_session'):
             new_token = SessionModel.create_session(user.user_id)
             expires = datetime.now() + timedelta(days=30)
             cm.set('auth_token', new_token, expires_at=expires)
             del st.session_state['needs_new_session']
         return user
+        
+    # 2. Check Cookie
     if stored_token:
         uid = SessionModel.get_user_id_by_token(stored_token)
         if uid:
-            all = UserModel.get_all_users()
-            user = next((u for u in all if u.user_id == uid), None)
+            all_users = UserModel.get_all_users()
+            user = next((u for u in all_users if u.user_id == uid), None)
             if user and user.is_active:
                 st.session_state['user'] = user
                 return user
@@ -92,6 +111,7 @@ def get_current_user():
 def render_navbar(current_page=None):
     apply_custom_style()
     user = get_current_user()
+    
     if user:
         with st.container():
             c1, c2, c3 = st.columns([2.5, 4, 1.5])
@@ -99,30 +119,13 @@ def render_navbar(current_page=None):
                 rname = ROLE_NAMES.get(user.role_id, "مستخدم")
                 st.markdown(f"**👤 {user.name}** | <span style='color:gray; font-size:0.9em'>{rname}</span>", unsafe_allow_html=True)
             with c2:
-                # إذا كان مديراً، يظهر له زر واحد "إدارة النظام" بدلاً من زرين
+                # إذا كان مديراً، يظهر له زر لوحة التحكم
                 if user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]:
                     st.page_link("pages/02_ادارة_النظام.py", label="لوحة التحكم والإدارة", icon="⚙️")
             with c3:
                 if st.button("🚪 خروج", use_container_width=True, key="top_nav_logout"): logout_user()
         st.divider()
 
----
-
-### 3. تحديث ملف `app.py` (تعديل القائمة الرئيسية)
-استبدل محتوى ملف `app.py` بهذا الكود الجديد الذي يشير للملف الموحد:
-
-
-http://googleusercontent.com/immersive_entry_chip/1
-
----
-
-### 4. التنظيف 🗑️
-بعد التأكد من أن الملف الجديد يعمل، يمكنك الآن حذف الملفات التالية من مجلد `pages`:
-* `pages/02_الصلاحيات.py`
-* `pages/06_اعدادات_الموقع.py`
-* `pages/07_المستخدمين.py`
-
-الآن أصبح لديك ملف إدارة واحد قوي وشامل! 🚀
 # ==========================================
 # 4. مشغل الميديا (Media Embedder)
 # ==========================================
@@ -134,15 +137,16 @@ def render_social_media(url):
         full = f"""<!DOCTYPE html><html style="background:#fff;"><head><style>html,body{{background:#fff !important;margin:0;padding:0;width:100%;height:100%;overflow:hidden;}} .container{{display:flex;justify-content:center;align-items:center;width:100%;height:100%;}} .card{{background:#fff;width:100%;max-width:450px;}}</style></head><body><div class="container"><div class="card">{html}</div></div></body></html>"""
         components.html(full, height=h, scrolling=True)
 
-    if "youtube" in url or "youtu.be" in url: st.video(url)
+    if "youtube" in url or "youtu.be" in url: 
+        st.video(url)
     elif "instagram" in url:
         embed = clean.rstrip("/") + "/embed" if "/embed" not in clean else clean
         inject_white(f'<iframe src="{embed}" width="100%" height="600" frameborder="0" scrolling="no" allowtransparency="true" style="background:#fff;"></iframe>', 620)
     elif "tiktok" in url:
         vid = clean.split("/")[-1]
-        inject_white(f'<blockquote class="tiktok-embed" cite="{clean}" data-video-id="{vid}" style="max-width:100%;background:#fff;"><section><a target="_blank" href="{clean}">Watch</a></section></blockquote><script async src="[https://www.tiktok.com/embed.js](https://www.tiktok.com/embed.js)"></script>', 780)
+        inject_white(f'<blockquote class="tiktok-embed" cite="{clean}" data-video-id="{vid}" style="max-width:100%;background:#fff;"><section><a target="_blank" href="{clean}">Watch</a></section></blockquote><script async src="https://www.tiktok.com/embed.js"></script>', 780)
     elif "twitter" in url or "x.com" in url:
-        inject_white(f'<blockquote class="twitter-tweet" data-theme="light" align="center"><a href="{url}"></a></blockquote><script async src="[https://platform.twitter.com/widgets.js](https://platform.twitter.com/widgets.js)"></script>', 600)
+        inject_white(f'<blockquote class="twitter-tweet" data-theme="light" align="center"><a href="{url}"></a></blockquote><script async src="https://platform.twitter.com/widgets.js"></script>', 600)
     else:
-        st.info(f"رابط: {url}")
-        st.link_button("فتح", url)
+        st.info(f"رابط خارجي: {url}")
+        st.link_button("فتح الرابط", url)
