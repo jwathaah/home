@@ -3,13 +3,7 @@ import time
 import backend as bk  # استدعاء الملف الشامل
 
 # إعداد الصفحة
-
-st.set_page_config(
-    page_title="المنصة المركزية", 
-    page_icon="🏠", 
-    layout="wide", 
-    initial_sidebar_state="expanded"  # 👈 التغيير هنا: اجعله مفتوحاً دائماً
-)
+st.set_page_config(page_title="المنصة المركزية", page_icon="🏠", layout="wide", initial_sidebar_state="expanded")
 
 # تطبيق الستايل
 bk.apply_custom_style()
