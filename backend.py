@@ -13,12 +13,9 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 from gspread.exceptions import APIError, WorksheetNotFound
 
-
 # ==========================================
 # 0. تحديد المسار الأساسي (FIX)
 # ==========================================
-# هذا السطر يضمن أننا نعرف مكان هذا الملف (backend.py)
-# وبالتالي نستطيع العثور على ملف المفاتيح حتى لو تم استدعاؤنا من داخل مجلد pages
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ==========================================
@@ -83,7 +80,6 @@ def _get_creds_object():
             print(f"Error loading from secrets: {e}")
 
     # 2. المحاولة الثانية: عن طريق ملف JSON محلي (للاستخدام المحلي Localhost)
-    # يبحث عن الملف بجانب backend.py مباشرة
     json_path = os.path.join(BASE_DIR, 'service_account.json')
     if os.path.exists(json_path):
         try:
@@ -104,11 +100,10 @@ def get_connection():
 
 def _execute_with_retry(func, *args, **kwargs):
     """دالة مساعدة لإعادة المحاولة بذكاء عند حدوث أخطاء API"""
-    for i in range(5): # زيادة المحاولات إلى 5
+    for i in range(5):
         try: return func(*args, **kwargs)
         except APIError as e:
             if e.response.status_code == 429: 
-                # انتظار تصاعدي: 2, 3, 5, 9, 17 ثانية
                 wait_time = (2 ** i) + 1
                 time.sleep(wait_time)
                 continue
@@ -118,20 +113,14 @@ def _execute_with_retry(func, *args, **kwargs):
 
 # --- دوال التعامل مع البيانات (Data Operations) ---
 
-# [تعديل هام]: إضافة الكاش هنا لتقليل الطلبات من قوقل
-@st.cache_data(ttl=300) # يحفظ البيانات لمدة 5 دقائق
+@st.cache_data(ttl=300)
 def get_data(sheet_name):
     client = get_connection()
     if not client: return pd.DataFrame()
     def _fetch():
         try:
-            # محاولة جلب الآيدي من الأسرار، أو وضعه مباشرة هنا إذا كنت تعمل محلياً فقط
             sheet_id = st.secrets["google"].get("spreadsheet_id")
-            if not sheet_id:
-                pass 
-            
-            if not sheet_id:
-                 return pd.DataFrame()
+            if not sheet_id: return pd.DataFrame()
 
             sh = client.open_by_key(sheet_id)
             ws = sh.worksheet(sheet_name)
@@ -147,7 +136,6 @@ def get_data(sheet_name):
     return res if res is not None else pd.DataFrame()
 
 def add_row(sheet_name, row_data_list, new_sheet_headers=None):
-    """إضافة صف ومسح الكاش لتحديث البيانات"""
     client = get_connection()
     if not client: return False
     def _add():
@@ -165,17 +153,13 @@ def add_row(sheet_name, row_data_list, new_sheet_headers=None):
         ws.append_row(row_data_list)
         return True
     
-    # تنفيذ العملية
     result = _execute_with_retry(_add)
-    
-    # [تعديل هام]: مسح الكاش إذا تمت العملية بنجاح
     if result is True:
         st.cache_data.clear()
         return True
     return False
 
 def delete_row(sheet_name, id_column, id_value):
-    """حذف صف ومسح الكاش لتحديث البيانات"""
     client = get_connection()
     if not client: return False
     def _del():
@@ -187,15 +171,12 @@ def delete_row(sheet_name, id_column, id_value):
         return False
         
     result = _execute_with_retry(_del)
-    
-    # [تعديل هام]: مسح الكاش إذا تمت العملية بنجاح
     if result is True:
         st.cache_data.clear()
         return True
     return False
 
 def update_field(sheet_name, id_column, id_value, target_column, new_value):
-    """تحديث حقل ومسح الكاش لتحديث البيانات"""
     client = get_connection()
     if not client: return False
     def _upd():
@@ -212,14 +193,12 @@ def update_field(sheet_name, id_column, id_value, target_column, new_value):
         except: return False
         
     result = _execute_with_retry(_upd)
-    
-    # [تعديل هام]: مسح الكاش إذا تمت العملية بنجاح
     if result is True:
         st.cache_data.clear()
         return True
     return False
 
-# --- دوال التعامل مع Google Drive (رفع وعرض) ---
+# --- دوال التعامل مع Google Drive ---
 
 def upload_file_to_cloud(file_obj, filename, mime_type):
     creds = _get_creds_object()
@@ -495,23 +474,24 @@ def apply_custom_style():
     </style>
     """, unsafe_allow_html=True)
 
-
-def render_sidebar():
+# [جديد] دالة عرض الهيدر العلوي (بدلاً من الشريط الجانبي)
+def render_header():
+    """عرض شريط علوي يحتوي على اسم المستخدم وزر الخروج"""
     user = get_current_user()
-    
-    # نستخدم الشريط الجانبي لعرض معلومات المستخدم وزر الخروج فقط
-    with st.sidebar:
-        if user:
-            # عرض بيانات المستخدم
-            st.info(f"👤 {user.name}\n\n🏷️ {user.role_name}")
+    if not user: return
+
+    with st.container():
+        # تقسيم العرض: 5 أجزاء للمعلومات و 1 جزء للزر
+        col1, col2 = st.columns([5, 1])
         
-        # (تم حذف القائمة المخصصة وأكواد التوجيه بالكامل)
+        with col1:
+            st.markdown(f"### 👤 مرحباً، {user.name} <span style='font-size:0.8em; color:gray'>({user.role_name})</span>", unsafe_allow_html=True)
+            
+        with col2:
+            if st.button("🚪 خروج", key="header_logout", use_container_width=True):
+                logout_procedure()
         
         st.divider()
-        
-        # زر تسجيل الخروج
-        if st.button("تسجيل خروج", type="primary", use_container_width=True):
-            logout_procedure()
 
 def render_social_media(link):
     if "youtube" in link: st.video(link)
