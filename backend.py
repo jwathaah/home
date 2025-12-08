@@ -9,7 +9,7 @@ import io  # ضروري للصور
 from datetime import datetime, timedelta
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload # ضروري للرفع والعرض
+from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload 
 from gspread.exceptions import APIError, WorksheetNotFound
 from streamlit_option_menu import option_menu
 
@@ -41,7 +41,7 @@ TABLE_PERMISSIONS = "permissions"
 TABLE_MEDIA = "media_library"
 TABLE_CHECKLISTS = "checklists"
 TABLE_SETTINGS = "settings"
-TABLE_COMMENTS = "comments"  # تمت إضافة جدول التعليقات هنا
+TABLE_COMMENTS = "comments"
 
 STATUS_ACTIVE = "active"
 
@@ -99,12 +99,17 @@ def get_data(sheet_name):
         try:
             sh = client.open_by_key(st.secrets["google"]["spreadsheet_id"])
             ws = sh.worksheet(sheet_name)
-            return pd.DataFrame(ws.get_all_records())
+            data = ws.get_all_records()
+            return pd.DataFrame(data)
         except WorksheetNotFound: return pd.DataFrame()
+        except gspread.exceptions.GSpreadException: return pd.DataFrame() # في حال كان الشيت فارغاً تماماً
     res = _execute_with_retry(_fetch)
     return res if res is not None else pd.DataFrame()
 
-def add_row(sheet_name, row_data_list):
+def add_row(sheet_name, row_data_list, new_sheet_headers=None):
+    """
+    إضافة صف، مع ميزة إنشاء الشيت وإضافة العناوين إذا لم يكن موجوداً
+    """
     client = get_connection()
     if not client: return False
     def _add():
@@ -114,7 +119,9 @@ def add_row(sheet_name, row_data_list):
         except WorksheetNotFound: 
             # إنشاء الورقة إذا لم تكن موجودة
             ws = sh.add_worksheet(title=sheet_name, rows=100, cols=20)
-            # إضافة العناوين الافتراضية إذا كانت الورقة جديدة (اختياري حسب الموديل)
+            # إذا تم تمرير عناوين (headers)، أضفها كأول صف
+            if new_sheet_headers:
+                ws.append_row(new_sheet_headers)
         
         ws.append_row(row_data_list)
         return True
@@ -150,7 +157,6 @@ def update_field(sheet_name, id_column, id_value, target_column, new_value):
 # --- دوال التعامل مع Google Drive (رفع وعرض) ---
 
 def upload_file_to_cloud(file_obj, filename, mime_type):
-    """رفع ملف إلى Google Drive (يدعم Shared Drives لتجنب مشكلة المساحة)"""
     creds = _get_creds_object()
     if not creds: return None, None
     try:
@@ -162,7 +168,6 @@ def upload_file_to_cloud(file_obj, filename, mime_type):
         
         media = MediaIoBaseUpload(file_obj, mimetype=mime_type, resumable=True)
         
-        # supportsAllDrives=True ضروري للمجلدات المشتركة
         f = service.files().create(
             body=meta, 
             media_body=media, 
@@ -176,14 +181,13 @@ def upload_file_to_cloud(file_obj, filename, mime_type):
     except Exception as e:
         error_msg = str(e)
         if "storageQuotaExceeded" in error_msg:
-             st.error("❌ خطأ: مساحة التخزين ممتلئة. تأكد من أنك رفعت الملف إلى مجلد مشترك (Shared Drive) وأضفت إيميل البوت كـ Content Manager.")
+             st.error("❌ خطأ: مساحة التخزين ممتلئة.")
         else:
              st.error(f"Upload Error: {error_msg}")
         return None, None
 
 @st.cache_data(ttl=3600)
 def get_file_content(file_id):
-    """جلب محتوى الملف كـ Bytes لعرض الصور مباشرة"""
     creds = _get_creds_object()
     if not creds: return None
 
@@ -199,8 +203,7 @@ def get_file_content(file_id):
             status, done = downloader.next_chunk()
             
         return file.getvalue()
-    except Exception as e:
-        # يمكن طباعة الخطأ للتتبع: print(e)
+    except Exception:
         return None
 
 def generate_uuid(): return str(uuid.uuid4())
@@ -231,7 +234,9 @@ class UserModel:
     def create_user(name, email, password, role_id):
         if UserModel.get_user_by_email(email)[0]: return False, "موجود مسبقاً"
         phash = hashlib.sha256(str.encode(password)).hexdigest()
-        if add_row(TABLE_USERS, [generate_uuid(), name, email, phash, role_id, STATUS_ACTIVE, datetime.now().strftime("%Y-%m-%d")]):
+        # هنا نرسل العناوين في حال كان الجدول غير موجود
+        headers = ['user_id', 'name', 'email', 'password_hash', 'role_id', 'status', 'created_at']
+        if add_row(TABLE_USERS, [generate_uuid(), name, email, phash, role_id, STATUS_ACTIVE, datetime.now().strftime("%Y-%m-%d")], new_sheet_headers=headers):
             return True, "تم"
         return False, "فشل"
     @staticmethod
@@ -246,7 +251,9 @@ class SectionModel:
         df = get_data(TABLE_SECTIONS)
         return [SectionModel(r['section_id'], r['name'], r['is_public']) for _, r in df.sort_values('sort_order').iterrows()] if not df.empty else []
     @staticmethod
-    def create_section(name, by, pub): add_row(TABLE_SECTIONS, [generate_uuid(), name, by, datetime.now().strftime("%Y-%m-%d"), 99, str(pub)])
+    def create_section(name, by, pub): 
+        headers = ['section_id', 'name', 'created_by', 'created_at', 'sort_order', 'is_public']
+        add_row(TABLE_SECTIONS, [generate_uuid(), name, by, datetime.now().strftime("%Y-%m-%d"), 99, str(pub)], new_sheet_headers=headers)
 
 class TabModel:
     def __init__(self, tid, sid, name): self.tab_id, self.section_id, self.name = tid, sid, name
@@ -255,7 +262,9 @@ class TabModel:
         df = get_data(TABLE_TABS)
         return [TabModel(r['tab_id'], r['section_id'], r['name']) for _, r in df[df['section_id']==str(sid)].iterrows()] if not df.empty else []
     @staticmethod
-    def create_tab(sid, name, by): add_row(TABLE_TABS, [generate_uuid(), sid, name, by, datetime.now().strftime("%Y-%m-%d"), 99])
+    def create_tab(sid, name, by): 
+        headers = ['tab_id', 'section_id', 'name', 'created_by', 'created_at', 'sort_order']
+        add_row(TABLE_TABS, [generate_uuid(), sid, name, by, datetime.now().strftime("%Y-%m-%d"), 99], new_sheet_headers=headers)
 
 class CategoryModel:
     def __init__(self, cid, tid, name): self.category_id, self.tab_id, self.name = cid, tid, name
@@ -264,7 +273,9 @@ class CategoryModel:
         df = get_data(TABLE_CATEGORIES)
         return [CategoryModel(r['category_id'], r['tab_id'], r['name']) for _, r in df[df['tab_id']==str(tid)].iterrows()] if not df.empty else []
     @staticmethod
-    def create_category(tid, name, by): add_row(TABLE_CATEGORIES, [generate_uuid(), tid, name, by, datetime.now().strftime("%Y-%m-%d"), 99])
+    def create_category(tid, name, by): 
+        headers = ['category_id', 'tab_id', 'name', 'created_by', 'created_at', 'sort_order']
+        add_row(TABLE_CATEGORIES, [generate_uuid(), tid, name, by, datetime.now().strftime("%Y-%m-%d"), 99], new_sheet_headers=headers)
 
 class ContentModel:
     def __init__(self, cid, catid, title, body, link, ctype, by, at):
@@ -277,7 +288,8 @@ class ContentModel:
         return [ContentModel(r['content_id'], r['category_id'], r['title'], r['body'], r['social_link'], r['content_type'], r['created_by'], r['created_at']) for _, r in df[df['category_id']==str(catid)].iterrows()] if not df.empty else []
     @staticmethod
     def create_content(cat_id, ctype, title, body, social_link, created_by):
-        add_row(TABLE_CONTENT, [generate_uuid(), cat_id, ctype, title, body, "", social_link, "", created_by, datetime.now().strftime("%Y-%m-%d")])
+        headers = ['content_id', 'category_id', 'content_type', 'title', 'body', 'file_url', 'social_link', 'thumbnail', 'created_by', 'created_at']
+        add_row(TABLE_CONTENT, [generate_uuid(), cat_id, ctype, title, body, "", social_link, "", created_by, datetime.now().strftime("%Y-%m-%d")], new_sheet_headers=headers)
     @staticmethod
     def delete_content(cid): return delete_row(TABLE_CONTENT, "content_id", cid)
 
@@ -291,7 +303,8 @@ class PermissionModel:
         return [PermissionModel(r['permission_id'], r['user_id'], r['section_id'], r['tab_id'], r['view'], r['edit'], r['hidden']) for _, r in df[df['user_id']==str(uid)].iterrows()] if not df.empty else []
     @staticmethod
     def grant_permission(uid, sid="", tid="", cid="", view=True, edit=False, hidden=False):
-        add_row(TABLE_PERMISSIONS, [generate_uuid(), uid, str(sid), str(tid), str(cid), str(view), str(edit), str(hidden)])
+        headers = ['permission_id', 'user_id', 'section_id', 'tab_id', 'content_id', 'view', 'edit', 'hidden']
+        add_row(TABLE_PERMISSIONS, [generate_uuid(), uid, str(sid), str(tid), str(cid), str(view), str(edit), str(hidden)], new_sheet_headers=headers)
     @staticmethod
     def check_access(uid, section_id=None):
         perms = PermissionModel.get_permissions_by_user(uid)
@@ -310,7 +323,9 @@ class ChecklistModel:
         df = get_data(TABLE_CHECKLISTS)
         return [ChecklistModel(r['item_id'], r['main_title'], r['sub_title'], r['item_name'], r['is_checked'], r['created_by']) for _, r in df.iterrows()] if not df.empty else []
     @staticmethod
-    def add_item(main, sub, name, by): add_row(TABLE_CHECKLISTS, [generate_uuid(), main, sub, name, "FALSE", by])
+    def add_item(main, sub, name, by): 
+        headers = ['item_id', 'main_title', 'sub_title', 'item_name', 'is_checked', 'created_by']
+        add_row(TABLE_CHECKLISTS, [generate_uuid(), main, sub, name, "FALSE", by], new_sheet_headers=headers)
     @staticmethod
     def toggle_status(iid, curr): update_field(TABLE_CHECKLISTS, "item_id", iid, "is_checked", "FALSE" if curr else "TRUE")
     @staticmethod
@@ -326,7 +341,8 @@ class MediaModel:
         return [MediaModel(r['media_id'], r['file_name'], r['file_type'], r['google_drive_id'], r['uploaded_by'], r['uploaded_at']) for _, r in df.iterrows()] if not df.empty else []
     @staticmethod
     def add_media(name, mtype, drive_id, by):
-        add_row(TABLE_MEDIA, [generate_uuid(), name, mtype, drive_id, by, datetime.now().strftime("%Y-%m-%d")])
+        headers = ['media_id', 'file_name', 'file_type', 'google_drive_id', 'uploaded_by', 'uploaded_at']
+        add_row(TABLE_MEDIA, [generate_uuid(), name, mtype, drive_id, by, datetime.now().strftime("%Y-%m-%d")], new_sheet_headers=headers)
 
 class SettingModel:
     def __init__(self, key, val): self.key, self.value = key, val
@@ -340,44 +356,43 @@ class SettingModel:
     @staticmethod
     def initialize_defaults(user):
         curr = SettingModel.get_all_settings()
-        if "site_title" not in curr: add_row(TABLE_SETTINGS, ["site_title", "المنصة", "", user, ""])
+        if "site_title" not in curr: 
+            add_row(TABLE_SETTINGS, ["site_title", "المنصة", "", user, ""], new_sheet_headers=['setting_key', 'setting_value', 'description', 'updated_by', 'updated_at'])
 
 # ==========================================
-# 4. موديل التعليقات (Google Sheets Version)
+# 4. موديل التعليقات (Google Sheets Version) - تم التصحيح
 # ==========================================
 class CommentModel:
-    """
-    تم تحويل هذا الكلاس ليعمل مع Google Sheets بدلاً من SQLite
-    البيانات المطلوبة في شيت 'comments':
-    comment_id, content_id, user_name, comment_text, created_at
-    """
     @staticmethod
     def create_comment(content_id, user_name, comment_text):
-        # إضافة صف جديد للتعليق
+        # أهم نقطة: تعريف العناوين لتضاف إذا كان الشيت جديداً
+        headers = ['comment_id', 'content_id', 'user_name', 'comment_text', 'created_at']
+        
         return add_row(TABLE_COMMENTS, [
             generate_uuid(), 
             str(content_id), 
             user_name, 
             comment_text, 
             datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        ])
+        ], new_sheet_headers=headers)
 
     @staticmethod
     def get_comments_by_content(content_id):
-        # جلب كل التعليقات
         df = get_data(TABLE_COMMENTS)
         if df.empty:
             return []
         
-        # فلترة حسب المحتوى
-        # تأكدنا من تحويل content_id إلى نص للمقارنة الصحيحة
+        # التأكد من وجود العناوين المطلوبة لتجنب KeyError
+        required_cols = ['content_id', 'user_name', 'comment_text', 'created_at']
+        if not all(col in df.columns for col in required_cols):
+            # إذا لم تكن العناوين موجودة، يعني أن الجدول معطوب (البيانات أصبحت عناوين)
+            return []
+
         filtered_df = df[df['content_id'].astype(str) == str(content_id)]
         
-        # الترتيب حسب التاريخ (اختياري)
         if not filtered_df.empty and 'created_at' in filtered_df.columns:
             filtered_df = filtered_df.sort_values('created_at')
             
-        # إرجاع قائمة من القواميس (Dicts) ليتوافق مع كود الواجهة
         return filtered_df.to_dict('records')
 
     @staticmethod
@@ -385,17 +400,15 @@ class CommentModel:
         return delete_row(TABLE_COMMENTS, "comment_id", comment_id)
 
 # ==========================================
-# 5. أدوات النظام (UI & Auth Helpers)
+# 5. أدوات النظام
 # ==========================================
 
 def get_current_user():
-    """إرجاع المستخدم من الجلسة"""
     if 'user' in st.session_state and st.session_state.get('logged_in'):
         return st.session_state['user']
     return None
 
 def login_procedure(email, password):
-    """منطق تسجيل الدخول"""
     hashed = hashlib.sha256(str.encode(password)).hexdigest()
     user, stored_hash = UserModel.get_user_by_email(email)
     if user and stored_hash == hashed:
@@ -410,7 +423,6 @@ def logout_procedure():
     st.rerun()
 
 def apply_custom_style():
-    """تطبيق CSS العام"""
     st.markdown("""
     <style>
         .stApp { direction: rtl; }
@@ -421,7 +433,6 @@ def apply_custom_style():
     """, unsafe_allow_html=True)
 
 def render_sidebar():
-    """رسم القائمة الجانبية"""
     user = get_current_user()
     with st.sidebar:
         if user:
