@@ -217,7 +217,6 @@ def render_forms_page():
     all_items = get_cached_checklists()
 
     # --- 1. تنظيم البيانات في هيكلية شجرية (رئيسي -> فرعي -> بنود) ---
-    # Structure: { "MainTitle": { "SubTitle": [Items...] } }
     grouped_data = {}
     if all_items:
         for item in all_items:
@@ -233,39 +232,31 @@ def render_forms_page():
 
     st.header("📋 قوائم المهام والنماذج")
     
-    # زر جانبي لإضافة قسم رئيسي جديد (لأن الأقسام الرئيسية هي الحاويات)
+    # --- إصلاح مشكلة إنشاء القسم الرئيسي ---
+    # إضافة قسم جديد تعني إضافة بند افتراضي لضمان حفظه في قاعدة البيانات
     if is_admin:
         with st.expander("🛠️ إضافة قسم رئيسي جديد للنظام"):
             with st.form("add_new_main_section_form"):
                 new_section_name = st.text_input("اسم القسم الرئيسي الجديد")
                 if st.form_submit_button("إنشاء القسم"):
                     if new_section_name:
-                        # نضيف عنصر وهمي لإنشاء الهيكل، أو نعتمد على الإضافة المباشرة لاحقاً
-                        # هنا سنقوم بإضافة عنصر "تجريبي" أو ننتظر إضافة بند فعلي
-                        # الأفضل: فقط تنبيه المستخدم أن يضيف بنداً تحت هذا الاسم
-                        st.info("لإظهار القسم، قم بإضافة بند واحد على الأقل فيه من الأسفل.")
+                        ChecklistModel.add_item(
+                            main=new_section_name,
+                            sub="عام", 
+                            name="بداية القسم (يمكنك حذف هذا البند لاحقاً)", 
+                            by=user.name
+                        )
+                        st.success(f"تم إنشاء القسم '{new_section_name}' بنجاح!")
+                        clear_checklist_cache()
+                        time.sleep(1)
+                        st.rerun()
                     else:
                         st.error("الاسم مطلوب")
 
     st.markdown("---")
 
     if not grouped_data:
-        st.info("📭 لا توجد قوائم مهام حالياً. ابدأ بإضافة بند جديد.")
-        # عرض نموذج إضافة مبدئي إذا كانت القائمة فارغة تماماً
-        if is_admin:
-            with st.container(border=True):
-                st.subheader("➕ إضافة أول بند")
-                with st.form("init_add_form"):
-                    m_txt = st.text_input("اسم القسم الرئيسي")
-                    s_txt = st.text_input("العنوان الفرعي (اختياري)")
-                    i_txt = st.text_input("نص المهمة")
-                    if st.form_submit_button("إضافة"):
-                        if m_txt and i_txt:
-                            ChecklistModel.add_item(m_txt, s_txt, i_txt, user.name)
-                            clear_checklist_cache()
-                            st.rerun()
-                        else:
-                            st.error("البيانات ناقصة")
+        st.info("📭 لا توجد قوائم مهام حالياً. ابدأ بإضافة قسم جديد من الأعلى.")
     else:
         # --- 2. عرض التبويبات الرئيسية ---
         main_titles = sorted(grouped_data.keys())
@@ -277,14 +268,12 @@ def render_forms_page():
                 sub_dict = grouped_data[main_title]
                 sub_titles = sorted(sub_dict.keys())
                 
-                # استخدام tabs للأقسام الفرعية كما طُلب
                 if sub_titles:
                     sub_tabs = st.tabs(sub_titles)
                     for j, sub_title in enumerate(sub_titles):
                         with sub_tabs[j]:
                             items = sub_dict[sub_title]
                             
-                            # فصل المنجز عن غير المنجز
                             unchecked_items = [itm for itm in items if not itm.is_checked]
                             checked_items = [itm for itm in items if itm.is_checked]
 
@@ -311,7 +300,7 @@ def render_forms_page():
                                             toggle_item_status(item.item_id, True)
                                             st.rerun()
                                     with c2:
-                                        # تعديل CSS لإزالة الخط (text-decoration: none)
+                                        # تم تعديل CSS لإزالة الخط (text-decoration: none)
                                         st.markdown(
                                             f"""
                                             <div style="
@@ -346,12 +335,10 @@ def render_forms_page():
                                         new_task_text = st.text_input("نص المهمة / البند")
                                         if st.form_submit_button("إضافة لهذا القسم"):
                                             if new_task_text:
-                                                # نستخدم العنوان الفرعي "عام" كقيمة فارغة إذا لزم الأمر، 
-                                                # أو نحفظه كما هو لضمان بقاء البند في نفس التبويب
                                                 final_sub = "" if sub_title == "عام" else sub_title
                                                 ChecklistModel.add_item(
                                                     main=main_title,
-                                                    sub=sub_title, # نحفظه بنفس اسم التبويب ليبقى فيه
+                                                    sub=sub_title,
                                                     name=new_task_text,
                                                     by=user.name
                                                 )
