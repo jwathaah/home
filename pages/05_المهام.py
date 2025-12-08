@@ -215,93 +215,152 @@ def render_forms_page():
         clear_checklist_cache()
 
     all_items = get_cached_checklists()
-    existing_main_titles = []
-    if all_items:
-        existing_main_titles = sorted(list(set([i.main_title for i in all_items if i.main_title])))
 
-    # القائمة الجانبية الخاصة بالنماذج (تظهر فقط عند تفعيل التبويب)
-    if is_admin:
-        with st.sidebar:
-            st.markdown("---")
-            st.header("⚙️ إدارة القوائم (النماذج)")
-            with st.expander("➕ إضافة بند جديد", expanded=False):
-                with st.form("smart_add_form_chk", clear_on_submit=True):
-                    select_options = ["✨ قسم جديد..."] + existing_main_titles
-                    selected_main = st.selectbox("القسم الرئيسي:", select_options)
-                    
-                    new_main_title = None
-                    if selected_main == "✨ قسم جديد...":
-                        new_main_title = st.text_input("اكتب اسم القسم الجديد:")
-                    
-                    sub_title = st.text_input("العنوان الفرعي (اختياري):")
-                    item_name = st.text_input("نص المهمة / البند:")
-                    
-                    if st.form_submit_button("إضافة", use_container_width=True):
-                        final_main = new_main_title if (selected_main == "✨ قسم جديد...") else selected_main
-                        if not final_main or not item_name:
-                            st.error("يرجى تحديد القسم واسم المهمة!")
-                        else:
-                            ChecklistModel.add_item(
-                                main=final_main, 
-                                sub=sub_title if sub_title else "", 
-                                name=item_name, 
-                                by=user.name
-                            )
-                            st.toast("✅ تمت الإضافة بنجاح!")
-                            clear_checklist_cache()
-                            time.sleep(1)
-                            st.rerun()
+    # --- 1. تنظيم البيانات في هيكلية شجرية (رئيسي -> فرعي -> بنود) ---
+    # Structure: { "MainTitle": { "SubTitle": [Items...] } }
+    grouped_data = {}
+    if all_items:
+        for item in all_items:
+            m_title = item.main_title if item.main_title else "غير مصنف"
+            s_title = item.sub_title if item.sub_title else "عام"
+            
+            if m_title not in grouped_data:
+                grouped_data[m_title] = {}
+            if s_title not in grouped_data[m_title]:
+                grouped_data[m_title][s_title] = []
+            
+            grouped_data[m_title][s_title].append(item)
 
     st.header("📋 قوائم المهام والنماذج")
+    
+    # زر جانبي لإضافة قسم رئيسي جديد (لأن الأقسام الرئيسية هي الحاويات)
+    if is_admin:
+        with st.expander("🛠️ إضافة قسم رئيسي جديد للنظام"):
+            with st.form("add_new_main_section_form"):
+                new_section_name = st.text_input("اسم القسم الرئيسي الجديد")
+                if st.form_submit_button("إنشاء القسم"):
+                    if new_section_name:
+                        # نضيف عنصر وهمي لإنشاء الهيكل، أو نعتمد على الإضافة المباشرة لاحقاً
+                        # هنا سنقوم بإضافة عنصر "تجريبي" أو ننتظر إضافة بند فعلي
+                        # الأفضل: فقط تنبيه المستخدم أن يضيف بنداً تحت هذا الاسم
+                        st.info("لإظهار القسم، قم بإضافة بند واحد على الأقل فيه من الأسفل.")
+                    else:
+                        st.error("الاسم مطلوب")
+
     st.markdown("---")
 
-    if not all_items:
-        st.info("📭 لا توجد قوائم مهام حالياً.")
-    else:
-        grouped_data = {}
-        for item in all_items:
-            if item.main_title not in grouped_data:
-                grouped_data[item.main_title] = []
-            grouped_data[item.main_title].append(item)
-        
-        for main_title, items in grouped_data.items():
-            with st.expander(f"📌 {main_title}", expanded=True):
-                unchecked_items = [i for i in items if not i.is_checked]
-                checked_items = [i for i in items if i.is_checked]
-                
-                for item in unchecked_items:
-                    c1, c2 = st.columns([0.5, 11])
-                    with c1:
-                        is_done = st.checkbox("done", value=False, key=f"check_{item.item_id}", label_visibility="collapsed")
-                        if is_done:
-                            toggle_item_status(item.item_id, False)
+    if not grouped_data:
+        st.info("📭 لا توجد قوائم مهام حالياً. ابدأ بإضافة بند جديد.")
+        # عرض نموذج إضافة مبدئي إذا كانت القائمة فارغة تماماً
+        if is_admin:
+            with st.container(border=True):
+                st.subheader("➕ إضافة أول بند")
+                with st.form("init_add_form"):
+                    m_txt = st.text_input("اسم القسم الرئيسي")
+                    s_txt = st.text_input("العنوان الفرعي (اختياري)")
+                    i_txt = st.text_input("نص المهمة")
+                    if st.form_submit_button("إضافة"):
+                        if m_txt and i_txt:
+                            ChecklistModel.add_item(m_txt, s_txt, i_txt, user.name)
+                            clear_checklist_cache()
                             st.rerun()
-                    with c2:
-                        if item.sub_title:
-                            st.markdown(f"**{item.sub_title}:** {item.item_name}")
                         else:
-                            st.write(item.item_name)
+                            st.error("البيانات ناقصة")
+    else:
+        # --- 2. عرض التبويبات الرئيسية ---
+        main_titles = sorted(grouped_data.keys())
+        main_tabs = st.tabs(main_titles)
 
-                if checked_items:
-                    if unchecked_items: st.divider()
-                    for item in checked_items:
-                        c1, c2, c3 = st.columns([0.5, 10.5, 1])
-                        with c1:
-                            undo = st.checkbox("undone", value=True, key=f"check_{item.item_id}", label_visibility="collapsed")
-                            if not undo:
-                                toggle_item_status(item.item_id, True)
-                                st.rerun()
-                        with c2:
-                            st.markdown(f"""<div style="background-color: #f0f2f6; color: #888; padding: 8px 12px; border-radius: 8px; border: 1px solid #e0e0e0; text-decoration: line-through; display: flex; align-items: center;">✅ {item.item_name}</div>""", unsafe_allow_html=True)
-                        with c3:
+        for i, main_title in enumerate(main_titles):
+            with main_tabs[i]:
+                # --- 3. عرض التبويبات الفرعية داخل كل قسم رئيسي ---
+                sub_dict = grouped_data[main_title]
+                sub_titles = sorted(sub_dict.keys())
+                
+                # استخدام tabs للأقسام الفرعية كما طُلب
+                if sub_titles:
+                    sub_tabs = st.tabs(sub_titles)
+                    for j, sub_title in enumerate(sub_titles):
+                        with sub_tabs[j]:
+                            items = sub_dict[sub_title]
+                            
+                            # فصل المنجز عن غير المنجز
+                            unchecked_items = [itm for itm in items if not itm.is_checked]
+                            checked_items = [itm for itm in items if itm.is_checked]
+
+                            # عرض البنود غير المنجزة
+                            for item in unchecked_items:
+                                c1, c2 = st.columns([0.5, 11])
+                                with c1:
+                                    is_done = st.checkbox("done", value=False, key=f"chk_{item.item_id}", label_visibility="collapsed")
+                                    if is_done:
+                                        toggle_item_status(item.item_id, False)
+                                        st.rerun()
+                                with c2:
+                                    st.write(item.item_name)
+
+                            # عرض البنود المنجزة
+                            if checked_items:
+                                if unchecked_items: st.divider()
+                                st.caption("✅ تم إنجازه:")
+                                for item in checked_items:
+                                    c1, c2, c3 = st.columns([0.5, 10.5, 1])
+                                    with c1:
+                                        undo = st.checkbox("undone", value=True, key=f"chk_{item.item_id}", label_visibility="collapsed")
+                                        if not undo:
+                                            toggle_item_status(item.item_id, True)
+                                            st.rerun()
+                                    with c2:
+                                        # تعديل CSS لإزالة الخط (text-decoration: none)
+                                        st.markdown(
+                                            f"""
+                                            <div style="
+                                                background-color: #e6fffa; 
+                                                color: #2c7a7b; 
+                                                padding: 8px 12px; 
+                                                border-radius: 8px; 
+                                                border: 1px solid #b2f5ea;
+                                                text-decoration: none; 
+                                                display: flex;
+                                                align-items: center;
+                                            ">
+                                                ✅ {item.item_name}
+                                            </div>
+                                            """, 
+                                            unsafe_allow_html=True
+                                        )
+                                    with c3:
+                                        if is_admin:
+                                            if st.button("🗑", key=f"del_{item.item_id}", help="حذف"):
+                                                ChecklistModel.delete_item(item.item_id)
+                                                st.toast("تم الحذف")
+                                                clear_checklist_cache()
+                                                time.sleep(0.5)
+                                                st.rerun()
+                            
+                            # --- 4. نموذج الإضافة المباشرة داخل كل قسم فرعي ---
                             if is_admin:
-                                if st.button("🗑", key=f"del_{item.item_id}", help="حذف"):
-                                    ChecklistModel.delete_item(item.item_id)
-                                    st.toast("تم الحذف")
-                                    clear_checklist_cache()
-                                    time.sleep(0.5)
-                                    st.rerun()
-
+                                st.markdown("---")
+                                with st.expander(f"➕ إضافة بند جديد في: {sub_title}", expanded=False):
+                                    with st.form(f"add_item_form_{main_title}_{sub_title}"):
+                                        new_task_text = st.text_input("نص المهمة / البند")
+                                        if st.form_submit_button("إضافة لهذا القسم"):
+                                            if new_task_text:
+                                                # نستخدم العنوان الفرعي "عام" كقيمة فارغة إذا لزم الأمر، 
+                                                # أو نحفظه كما هو لضمان بقاء البند في نفس التبويب
+                                                final_sub = "" if sub_title == "عام" else sub_title
+                                                ChecklistModel.add_item(
+                                                    main=main_title,
+                                                    sub=sub_title, # نحفظه بنفس اسم التبويب ليبقى فيه
+                                                    name=new_task_text,
+                                                    by=user.name
+                                                )
+                                                st.success("تمت الإضافة!")
+                                                clear_checklist_cache()
+                                                time.sleep(0.5)
+                                                st.rerun()
+                                            else:
+                                                st.warning("يرجى كتابة نص المهمة")
 
 def render_reports_page():
     ALLOWED_ROLES = [ROLE_SUPER_ADMIN, ROLE_ADMIN]
