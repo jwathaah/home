@@ -5,10 +5,11 @@ import json
 import time
 import uuid
 import hashlib
+import io
 from datetime import datetime, timedelta
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
+from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 from gspread.exceptions import APIError, WorksheetNotFound
 from streamlit_option_menu import option_menu
 
@@ -29,7 +30,7 @@ ROLE_NAMES = {
     ROLE_GUEST: "زائر"
 }
 
-# أسماء الجداول
+# أسماء الجداول في قوقل شيت
 TABLE_USERS = "users"
 TABLE_ROLES = "roles"
 TABLE_SECTIONS = "sections"
@@ -56,6 +57,7 @@ def _get_creds_object():
     try:
         if "google" not in st.secrets: return None
         
+        # دعم قراءة JSON كـ String أو Dict
         if "service_account_json" in st.secrets["google"]:
             creds_data = st.secrets["google"]["service_account_json"]
             creds_dict = json.loads(creds_data) if isinstance(creds_data, str) else creds_data
@@ -64,6 +66,7 @@ def _get_creds_object():
         else:
             return None
         
+        # إصلاح مشاكل التشفير في private_key
         if "private_key" in creds_dict:
             creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
         
@@ -77,6 +80,7 @@ def get_connection():
     return gspread.authorize(c) if c else None
 
 def _execute_with_retry(func, *args, **kwargs):
+    """دالة مساعدة لإعادة المحاولة عند حدوث أخطاء API"""
     for i in range(3):
         try: return func(*args, **kwargs)
         except APIError as e:
@@ -85,7 +89,7 @@ def _execute_with_retry(func, *args, **kwargs):
         except: return None
     return None
 
-# --- دوال التعامل مع البيانات ---
+# --- دوال التعامل مع البيانات (Data Operations) ---
 
 def get_data(sheet_name):
     client = get_connection()
@@ -137,8 +141,10 @@ def update_field(sheet_name, id_column, id_value, target_column, new_value):
         except: return False
     return _execute_with_retry(_upd) is True
 
+# --- دوال التعامل مع Google Drive ---
+
 def upload_file_to_cloud(file_obj, filename, mime_type):
-    """رفع ملف إلى Google Drive مع دعم كامل لـ Shared Drives"""
+    """رفع ملف إلى Google Drive (يدعم Shared Drives لتجنب مشكلة المساحة)"""
     creds = _get_creds_object()
     if not creds: return None, None
     try:
@@ -150,14 +156,13 @@ def upload_file_to_cloud(file_obj, filename, mime_type):
         
         media = MediaIoBaseUpload(file_obj, mimetype=mime_type, resumable=True)
         
-        # --- التعديل الجوهري هنا ---
-        # إضافة supportsTeamDrives=True لضمان التوافق القديم
+        # supportsAllDrives=True ضروري للمجلدات المشتركة
         f = service.files().create(
             body=meta, 
             media_body=media, 
             fields='id, webViewLink',
             supportsAllDrives=True,
-            supportsTeamDrives=True  # إضافة هامة
+            supportsTeamDrives=True
         ).execute()
         
         return f.get('id'), f.get('webViewLink')
@@ -165,18 +170,31 @@ def upload_file_to_cloud(file_obj, filename, mime_type):
     except Exception as e:
         error_msg = str(e)
         if "storageQuotaExceeded" in error_msg:
-             st.error(f"""
-             ❌ **خطأ: مساحة التخزين ممتلئة.**
-             
-             النظام يحاول الرفع إلى المجلد ID: `{st.secrets["google"].get("drive_folder_id")}`
-             
-             الحلول:
-             1. تأكد أن هذا الـ ID يخص **مساحة تخزين مشتركة (Shared Drive)** وليس مجلداً عادياً.
-             2. تأكد أن إيميل البوت (`{creds.service_account_email if hasattr(creds, 'service_account_email') else 'Service Account'}`) مضاف كـ **Content Manager**.
-             """)
+             st.error("❌ خطأ: مساحة التخزين ممتلئة. تأكد من أنك رفعت الملف إلى مجلد مشترك (Shared Drive) وأضفت إيميل البوت كـ Content Manager.")
         else:
              st.error(f"Upload Error: {error_msg}")
         return None, None
+
+@st.cache_data(ttl=3600)
+def get_file_content(file_id):
+    """جلب محتوى الملف كـ Bytes لعرض الصور مباشرة"""
+    creds = _get_creds_object()
+    if not creds: return None
+
+    try:
+        service = build('drive', 'v3', credentials=creds)
+        request = service.files().get_media(fileId=file_id)
+        
+        file = io.BytesIO()
+        downloader = MediaIoBaseDownload(file, request)
+        
+        done = False
+        while done is False:
+            status, done = downloader.next_chunk()
+            
+        return file.getvalue()
+    except Exception as e:
+        return None
 
 def generate_uuid(): return str(uuid.uuid4())
 
