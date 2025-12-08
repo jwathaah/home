@@ -5,11 +5,11 @@ import json
 import time
 import uuid
 import hashlib
-import io
+import io  # ضروري للصور
 from datetime import datetime, timedelta
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
+from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload # ضروري للرفع والعرض
 from gspread.exceptions import APIError, WorksheetNotFound
 from streamlit_option_menu import option_menu
 
@@ -141,7 +141,7 @@ def update_field(sheet_name, id_column, id_value, target_column, new_value):
         except: return False
     return _execute_with_retry(_upd) is True
 
-# --- دوال التعامل مع Google Drive ---
+# --- دوال التعامل مع Google Drive (رفع وعرض) ---
 
 def upload_file_to_cloud(file_obj, filename, mime_type):
     """رفع ملف إلى Google Drive (يدعم Shared Drives لتجنب مشكلة المساحة)"""
@@ -194,6 +194,7 @@ def get_file_content(file_id):
             
         return file.getvalue()
     except Exception as e:
+        # يمكن طباعة الخطأ للتتبع: print(e)
         return None
 
 def generate_uuid(): return str(uuid.uuid4())
