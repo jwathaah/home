@@ -497,71 +497,37 @@ def apply_custom_style():
 
 def render_sidebar():
     user = get_current_user()
-    if not user: return
-
-    # نستخدم الشريط الجانبي الأصلي لستريم ليت
     with st.sidebar:
-        st.image("https://cdn-icons-png.flaticon.com/512/906/906343.png", width=100) # يمكنك وضع شعارك هنا
-        st.write(f"### مرحباً، {user.name}")
-        st.caption(f"الصلاحية: {user.role_name}")
+        if user:
+            st.info(f"👤 {user.name}\n\n🏷️ {user.role_name}")
         
-        # ... (الجزء العلوي كما هو)
-        
-        # القائمة المنسدلة داخل الشريط الجانبي
         selected = option_menu(
-            menu_title="القائمة الرئيسية",
-            options=["الرئيسية", "الأقسام", "المكتبة", "الإدارة"],
-            icons=["house", "collection", "images", "gear"],
-            menu_icon="cast",
+            menu_title=None,
+            options=["الرئيسية", "الأقسام", "المكتبة", "النماذج", "التقارير", "الإدارة"],
+            icons=["house", "collection", "images", "clipboard-check", "graph-up", "gear"],
             default_index=0,
-            styles={
-                "container": {
-                    "padding": "0!important", 
-                    "background-color": "transparent",
-                    "width": "100%"  # التأكد من أنها لا تتجاوز العرض
-                },
-                "icon": {"color": "orange", "font-size": "14px"}, # تصغير الأيقونة قليلاً
-                "nav-link": {
-                    "font-size": "14px",  # تصغير الخط قليلاً لمنع التقطع
-                    "text-align": "right", 
-                    "margin": "5px",      # إضافة هامش حول الزر
-                    "--hover-color": "#eee",
-                    "width": "100%"       # ضمان عدم خروج النص عن الإطار
-                },
-                "nav-link-selected": {"background-color": "#ff4b4b"},
-            }
+            styles={"nav-link": {"font-size": "14px", "text-align": "right"}}
         )
         
-        # ... (باقي الكود كما هو)
-        
-        # مسافة فاصلة
-        st.write("") 
-        
-        # زر الخروج في أسفل الشريط الجانبي
-        if st.button("تسجيل خروج", use_container_width=True):
-            # استدعاء دالة الخروج من frontend
-            # ملاحظة: يجب تجنب الاستيراد الدائري، لذا سنقوم بمسح الجلسة يدوياً هنا أو استيرادها داخل الدالة
-            for key in st.session_state.keys():
-                del st.session_state[key]
-            st.rerun()
+        # تم تعديل الروابط لتعمل مع ملف المهام المدمج
+        if selected == "الرئيسية":
+            if st.button("🏠 الذهاب للرئيسية", use_container_width=True): st.switch_page("app.py")
+        elif selected == "الأقسام": st.switch_page("pages/01_الاقسام.py")
+        elif selected == "المكتبة": 
+            # بما أننا دمجنا الملفات، نوجه لملف المهام (الذي يحتوي المكتبة الآن)
+            st.switch_page("pages/05_المهام.py") 
+        elif selected == "النماذج": st.switch_page("pages/05_المهام.py")
+        elif selected == "التقارير":
+            if user and user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]: st.switch_page("pages/05_المهام.py")
+            else: st.warning("للمدراء فقط")
+        elif selected == "الإدارة":
+            if user and user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]: st.switch_page("pages/02_ادارة_النظام.py")
+            else: st.warning("للمدراء فقط")
 
-    # التوجيه (Routing)
-    if selected == "الرئيسية":
-        # نحن أصلاً في app.py عادة، لكن لو كنا في صفحة أخرى:
-        if "app.py" not in st.query_params.get("page", [""])[0]: # فحص بسيط
-             st.switch_page("app.py")
-             
-    elif selected == "الأقسام":
-        st.switch_page("pages/01_الاقسام.py")
-        
-    elif selected == "المكتبة":
-        st.switch_page("pages/05_المهام.py")
-        
-    elif selected == "الإدارة":
-        if user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]:
-            st.switch_page("pages/02_ادارة_النظام.py")
-        else:
-            st.warning("ليس لديك صلاحية للدخول هنا")
+        st.divider()
+        if st.button("تسجيل خروج", type="primary"):
+            logout_procedure()
+
 def render_social_media(link):
     if "youtube" in link: st.video(link)
     else: st.markdown(f"🔗 [رابط]({link})")
