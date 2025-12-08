@@ -9,67 +9,102 @@ from backend import (
     ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_NAMES
 )
 
-# 1. التنسيق (Styling)
+# ==========================================
+# 1. التنسيق (Styling) - الحل الجذري للمظهر
 # ==========================================
 def apply_custom_style():
     style = """
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap');
     
+    /* 1. تعيين الخط والاتجاه العام */
     html, body, [class*="css"] { font-family: 'Cairo', sans-serif !important; }
     .stApp { direction: rtl; text-align: right; }
     h1, h2, h3, h4, h5, h6, p, div, label, .stMarkdown { text-align: right !important; }
     
-    /* ---------------------------------------------------- */
-    /* 🔥 الحل الجذري لإخفاء الشريط الجانبي والأسهم 🔥 */
-    /* ---------------------------------------------------- */
+    /* ========================================================= */
+    /* ⛔ منطقة الحظر: إخفاء عناصر ستريم ليت الأصلية نهائياً ⛔ */
+    /* ========================================================= */
     
-    /* 1. إخفاء حاوية الشريط الجانبي بالكامل */
+    /* إخفاء الشريط الجانبي بالكامل (الحاوية والخلفية) */
     section[data-testid="stSidebar"] {
         display: none !important;
-        visibility: hidden !important;
         width: 0px !important;
+        visibility: hidden !important;
     }
     
-    /* 2. إخفاء زر التحكم (السهم > أو <) الموجود في الزاوية العلوية */
-    [data-testid="collapsedControl"] {
+    /* إخفاء زر السهم (التحكم في الطي) الذي يسبب التكرار */
+    button[data-testid="collapsedControl"] {
+        display: none !important;
+        visibility: hidden !important;
+    }
+    div[data-testid="collapsedControl"] {
+        display: none !important;
+    }
+    
+    /* إخفاء الشريط العلوي (الرأس) الذي يظهر فيه زر القائمة والخيارات - يحل مشكلة الشريط السماوي */
+    header[data-testid="stHeader"] {
+        display: none !important;
+        visibility: hidden !important;
+        height: 0px !important;
+    }
+    
+    /* إخفاء شريط الأدوات (النقاط الثلاث والخيارات) */
+    div[data-testid="stToolbar"] {
         display: none !important;
         visibility: hidden !important;
     }
     
-    /* 3. إخفاء أيقونة القائمة (الهمبرغر) في الأعلى إذا رغبت */
-    /* [data-testid="stToolbar"] { visibility: hidden !important; } */
+    /* إخفاء التنقل الافتراضي للصفحات */
+    div[data-testid="stSidebarNav"] {
+        display: none !important;
+    }
 
-    /* 4. إجبار المحتوى الرئيسي على أخذ كامل العرض */
+    /* ========================================================= */
+    /* 🛠️ إصلاح تخطيط الصفحة الرئيسي بعد الحذف 🛠️ */
+    /* ========================================================= */
+    
+    /* إجبار المحتوى الرئيسي على أخذ كامل الشاشة وإزالة الهوامش العلوية */
     section.main > div { 
-        max-width: 100% !important; 
-        padding-top: 1rem;
-        margin-right: 0px !important; /* ضمان عدم وجود هامش يمين */
-        margin-left: 0px !important;
+        padding-top: 1rem !important; /* تقليل المسافة من الأعلى لأننا أخفينا الهيدر */
+        padding-left: 1rem !important;
+        padding-right: 1rem !important;
+        max-width: 100% !important;
     }
     
-    /* ---------------------------------------------------- */
-
-    div[data-testid="column"] button { width: 100%; }
-    #MainMenu, footer, header { visibility: hidden; }
-    
-    div[data-testid="stVerticalBlock"] > div[style*="border"] { border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
-    button { font-family: 'Cairo', sans-serif !important; font-weight: 600 !important; }
-    
-    @media only screen and (max-width: 768px) {
-        .block-container { padding: 3rem 1rem 2rem 1rem !important; }
-        h1 { font-size: 1.8rem !important; }
-        .stButton button { width: 100% !important; border-radius: 12px !important; padding: 0.5rem !important; }
-        div[data-testid="stDataFrame"] { width: 100% !important; overflow-x: auto !important; }
-        
-        /* إصلاح إضافي للجوال: إزالة الهوامش الجانبية التي يسببها الشريط المخفي */
-        .stApp > header { display: none !important; }
+    /* إصلاح خاص للجوال: إزالة أي مساحة محجوزة */
+    @media (max-width: 768px) {
+        .block-container {
+            padding-top: 1rem !important;
+            padding-left: 0.5rem !important;
+            padding-right: 0.5rem !important;
+        }
+        /* إخفاء أيقونات زائدة قد تظهر في الجوال */
+        button[kind="header"] { display: none !important; }
     }
     
-    .stTabs [data-baseweb="tab"] { height: 50px; background-color: #f0f2f6; border-radius: 8px; font-weight: 600; }
-    .stTabs [aria-selected="true"] { background-color: #ff4b4b !important; color: white !important; }
-    div[role="radiogroup"] > label { background: #ffffff; padding: 10px; border-radius: 8px; border: 1px solid #eee; }
-    div[role="radiogroup"] > label:hover { background: #f9f9f9; }
+    /* تحسين شكل التبويبات والأزرار */
+    div[data-testid="stVerticalBlock"] > div[style*="border"] { 
+        border-radius: 10px; 
+        box-shadow: 0 2px 4px rgba(0,0,0,0.05); 
+    }
+    
+    button { 
+        font-family: 'Cairo', sans-serif !important; 
+        font-weight: 600 !important; 
+    }
+    
+    .stTabs [data-baseweb="tab"] { 
+        height: 50px; 
+        background-color: #f0f2f6; 
+        border-radius: 8px; 
+        font-weight: 600; 
+    }
+    
+    .stTabs [aria-selected="true"] { 
+        background-color: #ff4b4b !important; 
+        color: white !important; 
+    }
     </style>
     """
     st.markdown(style, unsafe_allow_html=True)
@@ -103,10 +138,8 @@ def get_current_user():
     cm = get_manager()
     stored_token = cm.get('auth_token')
     
-    # 1. Check Session State
     if 'user' in st.session_state:
         user = st.session_state['user']
-        # If logged in just now, save cookie
         if st.session_state.get('needs_new_session'):
             new_token = SessionModel.create_session(user.user_id)
             expires = datetime.now() + timedelta(days=30)
@@ -114,7 +147,6 @@ def get_current_user():
             del st.session_state['needs_new_session']
         return user
         
-    # 2. Check Cookie
     if stored_token:
         uid = SessionModel.get_user_id_by_token(stored_token)
         if uid:
@@ -139,7 +171,6 @@ def render_navbar(current_page=None):
                 rname = ROLE_NAMES.get(user.role_id, "مستخدم")
                 st.markdown(f"**👤 {user.name}** | <span style='color:gray; font-size:0.9em'>{rname}</span>", unsafe_allow_html=True)
             with c2:
-                # إذا كان مديراً، يظهر له زر لوحة التحكم
                 if user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]:
                     st.page_link("pages/02_ادارة_النظام.py", label="لوحة التحكم والإدارة", icon="⚙️")
             with c3:
@@ -154,7 +185,7 @@ def render_social_media(url):
     clean = url.split("?")[0].strip()
     
     def inject_white(html, h=700):
-        full = f"""<!DOCTYPE html><html style="background:#fff;"><head><style>html,body{{background:#fff !important;margin:0;padding:0;width:100%;height:100%;overflow:hidden;}} .container{{display:flex;justify-content:center;align-items:center;width:100%;height:100%;}} .card{{background:#fff;width:100%;max-width:450px;}}</style></head><body><div class="container"><div class="card">{html}</div></div></body></html>"""
+        full = f"""<!DOCTYPE html><html style="background:#fff;"><head><style>html,body{{background:#fff !important;margin:0;padding:0;width:100%;height:100%;overflow:hidden;}} .container{{display:flex;justify-content:center;align-items:center;width:100%;height:100%;}} .card{{background:#fff;width:100%;max-width:450px;}}</style></head><body><div class=\"container\"><div class=\"card\">{html}</div></div></body></html>"""
         components.html(full, height=h, scrolling=True)
 
     if "youtube" in url or "youtu.be" in url: 
