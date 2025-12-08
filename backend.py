@@ -103,17 +103,23 @@ def get_connection():
     return gspread.authorize(c) if c else None
 
 def _execute_with_retry(func, *args, **kwargs):
-    """دالة مساعدة لإعادة المحاولة عند حدوث أخطاء API"""
-    for i in range(3):
+    """دالة مساعدة لإعادة المحاولة بذكاء عند حدوث أخطاء API"""
+    for i in range(5): # زيادة المحاولات إلى 5
         try: return func(*args, **kwargs)
         except APIError as e:
-            if e.response.status_code == 429: time.sleep((i+1)*2); continue
+            if e.response.status_code == 429: 
+                # انتظار تصاعدي: 2, 3, 5, 9, 17 ثانية
+                wait_time = (2 ** i) + 1
+                time.sleep(wait_time)
+                continue
             else: return None
         except: return None
     return None
 
 # --- دوال التعامل مع البيانات (Data Operations) ---
 
+# [تعديل هام]: إضافة الكاش هنا لتقليل الطلبات من قوقل
+@st.cache_data(ttl=300) # يحفظ البيانات لمدة 5 دقائق
 def get_data(sheet_name):
     client = get_connection()
     if not client: return pd.DataFrame()
@@ -122,8 +128,6 @@ def get_data(sheet_name):
             # محاولة جلب الآيدي من الأسرار، أو وضعه مباشرة هنا إذا كنت تعمل محلياً فقط
             sheet_id = st.secrets["google"].get("spreadsheet_id")
             if not sheet_id:
-                # Fallback: إذا لم يكن في الأسرار، ربما يكون معرفاً كمتغير بيئة أو ثابت
-                # يمكنك وضع الآيدي هنا كنص مباشرة للاختبار إذا لزم الأمر
                 pass 
             
             if not sheet_id:
@@ -143,6 +147,7 @@ def get_data(sheet_name):
     return res if res is not None else pd.DataFrame()
 
 def add_row(sheet_name, row_data_list, new_sheet_headers=None):
+    """إضافة صف ومسح الكاش لتحديث البيانات"""
     client = get_connection()
     if not client: return False
     def _add():
@@ -159,9 +164,18 @@ def add_row(sheet_name, row_data_list, new_sheet_headers=None):
         
         ws.append_row(row_data_list)
         return True
-    return _execute_with_retry(_add) is True
+    
+    # تنفيذ العملية
+    result = _execute_with_retry(_add)
+    
+    # [تعديل هام]: مسح الكاش إذا تمت العملية بنجاح
+    if result is True:
+        st.cache_data.clear()
+        return True
+    return False
 
 def delete_row(sheet_name, id_column, id_value):
+    """حذف صف ومسح الكاش لتحديث البيانات"""
     client = get_connection()
     if not client: return False
     def _del():
@@ -171,9 +185,17 @@ def delete_row(sheet_name, id_column, id_value):
         cell = ws.find(str(id_value))
         if cell: ws.delete_rows(cell.row); return True
         return False
-    return _execute_with_retry(_del) is True
+        
+    result = _execute_with_retry(_del)
+    
+    # [تعديل هام]: مسح الكاش إذا تمت العملية بنجاح
+    if result is True:
+        st.cache_data.clear()
+        return True
+    return False
 
 def update_field(sheet_name, id_column, id_value, target_column, new_value):
+    """تحديث حقل ومسح الكاش لتحديث البيانات"""
     client = get_connection()
     if not client: return False
     def _upd():
@@ -188,7 +210,14 @@ def update_field(sheet_name, id_column, id_value, target_column, new_value):
             ws.update_cell(cell.row, col_index, new_value)
             return True
         except: return False
-    return _execute_with_retry(_upd) is True
+        
+    result = _execute_with_retry(_upd)
+    
+    # [تعديل هام]: مسح الكاش إذا تمت العملية بنجاح
+    if result is True:
+        st.cache_data.clear()
+        return True
+    return False
 
 # --- دوال التعامل مع Google Drive (رفع وعرض) ---
 
