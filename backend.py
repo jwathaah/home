@@ -495,39 +495,4 @@ def apply_custom_style():
     </style>
     """, unsafe_allow_html=True)
 
-def render_sidebar():
-    user = get_current_user()
-    with st.sidebar:
-        if user:
-            st.info(f"👤 {user.name}\n\n🏷️ {user.role_name}")
-        
-        selected = option_menu(
-            menu_title=None,
-            options=["الرئيسية", "الأقسام", "المكتبة", "النماذج", "التقارير", "الإدارة"],
-            icons=["house", "collection", "images", "clipboard-check", "graph-up", "gear"],
-            default_index=0,
-            styles={"nav-link": {"font-size": "14px", "text-align": "right"}}
-        )
-        
-        # تم تعديل الروابط لتعمل مع ملف المهام المدمج
-        if selected == "الرئيسية":
-            if st.button("🏠 الذهاب للرئيسية", use_container_width=True): st.switch_page("app.py")
-        elif selected == "الأقسام": st.switch_page("pages/01_الاقسام.py")
-        elif selected == "المكتبة": 
-            # بما أننا دمجنا الملفات، نوجه لملف المهام (الذي يحتوي المكتبة الآن)
-            st.switch_page("pages/05_المهام.py") 
-        elif selected == "النماذج": st.switch_page("pages/05_المهام.py")
-        elif selected == "التقارير":
-            if user and user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]: st.switch_page("pages/05_المهام.py")
-            else: st.warning("للمدراء فقط")
-        elif selected == "الإدارة":
-            if user and user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]: st.switch_page("pages/02_ادارة_النظام.py")
-            else: st.warning("للمدراء فقط")
 
-        st.divider()
-        if st.button("تسجيل خروج", type="primary"):
-            logout_procedure()
-
-def render_social_media(link):
-    if "youtube" in link: st.video(link)
-    else: st.markdown(f"🔗 [رابط]({link})")
