@@ -55,132 +55,164 @@ def can_edit_content(section_id=None):
     return False
 
 # ==========================================
-# دالة معالجة وعرض الروابط (The Fix)
+# 🔥 دالة المعالجة الشاملة للروابط (The Ultimate Embedder)
 # ==========================================
 def smart_embed_link(link):
     if not link: return
-
     link = link.strip()
-    
-    # دالة مساعدة لإنشاء إطار بحجم الجوال
-    def render_mobile_iframe(embed_url, platform_class="generic"):
-        html_code = f"""
-        <style>
-            .video-container {{
-                position: relative;
-                width: 100%;
-                /* نسبة العرض للارتفاع 9:16 (للجوال) - يمكن تعديلها */
-                padding-bottom: 120%; 
-                height: 0;
+
+    # دالة لإنشاء حاوية HTML تحاكي الجوال
+    def render_html_component(html_content, height=650):
+        # تغليف المحتوى بتصميم الجوال
+        wrapper = f"""
+        <div style="
+            display: flex; 
+            justify-content: center; 
+            width: 100%; 
+            background-color: transparent;">
+            
+            <div style="
+                width: 100%; 
+                max-width: 400px; /* عرض الجوال */
+                min-height: {height}px;
                 overflow: hidden;
                 border-radius: 12px;
-                background-color: #000;
-                border: 1px solid #ddd;
-            }}
-            .video-container iframe {{
-                position: absolute;
-                top: 0;
-                left: 0;
-                width: 100%;
-                height: 100%;
-                border: 0;
-            }}
-        </style>
-        <div class="video-container {platform_class}">
-            <iframe src="{embed_url}" allowfullscreen allow="autoplay; encrypted-media"></iframe>
+                display: flex;
+                justify-content: center;
+                align-items: center;
+            ">
+                {html_content}
+            </div>
         </div>
         """
-        # نستخدم height ثابت للـ component ليظهر المحتوى كاملاً
-        components.html(html_code, height=600, scrolling=False)
+        components.html(wrapper, height=height, scrolling=True)
 
     # ---------------------------------------
-    # 1. معالجة روابط إنستقرام (Instagram)
+    # 1. إنستقرام (Instagram) - جميع الأشكال
     # ---------------------------------------
     if "instagram.com" in link:
-        # نحتاج لتحويل الرابط إلى صيغة Embed
-        # مثال: .../reel/xyz/ -> .../reel/xyz/embed/
-        clean_link = link.split("?")[0] # حذف الباراميترات الزائدة
-        if not clean_link.endswith("/"):
-            clean_link += "/"
-        
-        if "/embed" not in clean_link:
-            embed_url = clean_link + "embed"
+        # استخراج معرف الفيديو بدقة (سواء كان reel أو p أو tv)
+        # يدعم الروابط الطويلة والقصيرة والتي تحتوي على اسم المستخدم
+        match = re.search(r'instagram\.com/(?:.*/)?(reel|p|tv)/([^/?#&]+)', link)
+        if match:
+            post_id = match.group(2)
+            # نستخدم كود التضمين الرسمي من انستقرام لضمان العمل
+            embed_code = f"""
+            <blockquote class="instagram-media" 
+                data-instgrm-permalink="https://www.instagram.com/p/{post_id}/" 
+                data-instgrm-version="14" 
+                style=" background:#FFF; border:0; border-radius:3px; box-shadow:0 0 1px 0 rgba(0,0,0,0.5),0 1px 10px 0 rgba(0,0,0,0.15); margin: 1px; max-width:540px; min-width:326px; padding:0; width:99.375%; width:-webkit-calc(100% - 2px); width:calc(100% - 2px);">
+            </blockquote>
+            <script async src="//www.instagram.com/embed.js"></script>
+            """
+            render_html_component(embed_code, height=700)
         else:
-            embed_url = clean_link
-            
-        render_mobile_iframe(embed_url, "instagram")
+            st.error("رابط إنستقرام غير صحيح، تأكد من نسخه بشكل كامل.")
 
     # ---------------------------------------
-    # 2. معالجة روابط يوتيوب (Shorts & Regular)
-    # ---------------------------------------
-    elif "youtube.com" in link or "youtu.be" in link:
-        video_id = ""
-        if "youtu.be" in link:
-            video_id = link.split("/")[-1].split("?")[0]
-        elif "shorts" in link:
-            video_id = link.split("shorts/")[-1].split("?")[0]
-        elif "v=" in link:
-            video_id = link.split("v=")[-1].split("&")[0]
-        
-        if video_id:
-            embed_url = f"https://www.youtube.com/embed/{video_id}?autoplay=0&rel=0&playsinline=1"
-            # يوتيوب يعمل جيداً مع st.video لكن لتوحيد الشكل الطولي نستخدم iframe إذا كان شورتس
-            if "shorts" in link:
-                 render_mobile_iframe(embed_url, "youtube-shorts")
-            else:
-                 st.video(link) # الفيديوهات العرضية تبدو أفضل بالمشغل العادي
-
-    # ---------------------------------------
-    # 3. معالجة روابط تيك توك (TikTok)
+    # 2. تيك توك (TikTok)
     # ---------------------------------------
     elif "tiktok.com" in link:
-        # تيك توك يحتاج في الغالب إلى معرف الفيديو
-        # هذا حل تقريبي لأن تيك توك يمنع أحياناً التضمين البسيط
-        # نستخدم مكتبة أو iframe مباشر من تيك توك
-        parts = link.split("/video/")
-        if len(parts) > 1:
-            video_id = parts[1].split("?")[0]
-            embed_url = f"https://www.tiktok.com/embed/v2/{video_id}"
-            render_mobile_iframe(embed_url, "tiktok")
-        else:
-            # محاولة عرض الرابط كما هو إذا لم نتمكن من استخراج المعرف
-            st.markdown(f"📺 **[فتح فيديو تيك توك في نافذة جديدة]({link})**")
-
-    # ---------------------------------------
-    # 4. معالجة روابط تويتر / X
-    # ---------------------------------------
-    elif "twitter.com" in link or "x.com" in link:
-        try:
-            components.html(f"""
-            <blockquote class="twitter-tweet" data-media-max-width="560">
-            <a href="{link}"></a>
+        # استخراج معرف الفيديو من تيك توك
+        match = re.search(r'video/(\d+)', link)
+        if match:
+            video_id = match.group(1)
+            # كود التضمين الرسمي لتيك توك (الأكثر ضماناً)
+            embed_code = f"""
+            <blockquote class="tiktok-embed" cite="{link}" data-video-id="{video_id}" style="max-width: 605px;min-width: 325px;" > 
+            <section> </section> 
             </blockquote> 
-            <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
-            """, height=600, scrolling=True)
-        except:
-            st.info(f"رابط تغريدة: {link}")
+            <script async src="https://www.tiktok.com/embed.js"></script>
+            """
+            render_html_component(embed_code, height=750)
+        else:
+             # في حال فشل استخراج المعرف، نحاول استخدام الرابط المختصر
+             st.markdown(f"🎥 [اضغط هنا لمشاهدة فيديو تيك توك]({link})")
 
     # ---------------------------------------
-    # 5. معالجة سناب شات (Snapchat)
+    # 3. يوتيوب (Shorts & Regular)
+    # ---------------------------------------
+    elif "youtube.com" in link or "youtu.be" in link:
+        # استخراج المعرف بجميع الأشكال
+        video_id = None
+        if "shorts" in link:
+            match = re.search(r'shorts/([^/?#&]+)', link)
+            if match: video_id = match.group(1)
+        elif "youtu.be" in link:
+            match = re.search(r'youtu\.be/([^/?#&]+)', link)
+            if match: video_id = match.group(1)
+        else:
+            match = re.search(r'v=([^&]+)', link)
+            if match: video_id = match.group(1)
+
+        if video_id:
+            # نستخدم Iframe لليوتيوب لأنه الأسرع والأفضل
+            embed_url = f"https://www.youtube.com/embed/{video_id}?rel=0&playsinline=1"
+            html_code = f"""
+            <style>
+            .iframe-container {{ position: relative; width: 100%; padding-bottom: 56.25%; height: 0; }}
+            .iframe-container iframe {{ position: absolute; top: 0; left: 0; width: 100%; height: 100%; border-radius: 10px; }}
+            </style>
+            <div class="iframe-container">
+                <iframe src="{embed_url}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+            </div>
+            """
+            # إذا كان شورتس نعدل الارتفاع ليكون طولياً
+            h = 400 if "shorts" not in link else 700
+            if "shorts" in link:
+                 html_code = html_code.replace("padding-bottom: 56.25%;", "padding-bottom: 177%;") # نسبة الشورتس
+            
+            render_html_component(html_code, height=h)
+        else:
+            st.video(link)
+
+    # ---------------------------------------
+    # 4. سناب شات (Snapchat) - Spotlight/Story
     # ---------------------------------------
     elif "snapchat.com" in link:
-        # روابط السناب تحتاج عادةً لزر تضمين خاص، لكن نجرب الـ iframe المباشر
-        render_mobile_iframe(link, "snapchat")
+        # سناب شات صعب التضمين المباشر بدون API، نستخدم Iframe مباشر قد يعمل لبعض القصص العامة
+        # الأفضل عرضه كرابط خارجي منسق بشكل جميل إذا فشل التضمين
+        st.components.v1.iframe(link, height=600, scrolling=True)
 
     # ---------------------------------------
-    # 6. روابط مباشرة (ملفات)
+    # 5. تويتر / X (Twitter)
+    # ---------------------------------------
+    elif "twitter.com" in link or "x.com" in link:
+        embed_code = f"""
+        <blockquote class="twitter-tweet">
+        <a href="{link}"></a>
+        </blockquote> 
+        <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
+        """
+        render_html_component(embed_code, height=600)
+
+    # ---------------------------------------
+    # 6. فيسبوك (Facebook)
+    # ---------------------------------------
+    elif "facebook.com" in link or "fb.watch" in link:
+        # فيسبوك يتطلب Iframe خاص بـ "plugins/video.php"
+        safe_link = link.replace("&", "&amp;")
+        embed_code = f"""
+        <iframe src="https://www.facebook.com/plugins/video.php?href={safe_link}&show_text=false&width=350" 
+        width="350" height="600" style="border:none;overflow:hidden" scrolling="no" frameborder="0" allowfullscreen="true" allow="autoplay; clipboard-write; encrypted-media; picture-in-picture; web-share"></iframe>
+        """
+        render_html_component(embed_code, height=600)
+
+    # ---------------------------------------
+    # 7. ملفات مباشرة
     # ---------------------------------------
     elif link.endswith(('.mp4', '.mov', '.avi', '.mp3', '.wav')):
         if link.endswith(('.mp3', '.wav')):
             st.audio(link)
         else:
             st.video(link)
-            
+
     # ---------------------------------------
-    # 7. افتراضي
+    # 8. رابط عادي
     # ---------------------------------------
     else:
-        st.markdown(f"🔗 [زيارة الرابط]({link})")
+        st.info(f"🔗 رابط خارجي: {link}")
+        st.link_button("اضغط لفتح الرابط", link)
 
 
 # ==========================================
@@ -322,7 +354,7 @@ else:
                                                     ct_body = st.text_area("المحتوى", key=f"a_{current_cat.category_id}")
                                                 
                                                 social_link = st.text_input("رابط (انستقرام، تيك توك، يوتيوب، سناب...)")
-                                                st.caption("سيتم تكبير الفيديو تلقائياً ليناسب الجوال.")
+                                                st.caption("يدعم: Reels, Shorts, TikTok, Tweets, Snapchat")
                                                 
                                                 if st.form_submit_button("نشر"):
                                                     if ct_title:
