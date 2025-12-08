@@ -41,6 +41,7 @@ TABLE_PERMISSIONS = "permissions"
 TABLE_MEDIA = "media_library"
 TABLE_CHECKLISTS = "checklists"
 TABLE_SETTINGS = "settings"
+TABLE_COMMENTS = "comments"  # تمت إضافة جدول التعليقات هنا
 
 STATUS_ACTIVE = "active"
 
@@ -108,8 +109,13 @@ def add_row(sheet_name, row_data_list):
     if not client: return False
     def _add():
         sh = client.open_by_key(st.secrets["google"]["spreadsheet_id"])
-        try: ws = sh.worksheet(sheet_name)
-        except WorksheetNotFound: ws = sh.add_worksheet(title=sheet_name, rows=100, cols=20)
+        try: 
+            ws = sh.worksheet(sheet_name)
+        except WorksheetNotFound: 
+            # إنشاء الورقة إذا لم تكن موجودة
+            ws = sh.add_worksheet(title=sheet_name, rows=100, cols=20)
+            # إضافة العناوين الافتراضية إذا كانت الورقة جديدة (اختياري حسب الموديل)
+        
         ws.append_row(row_data_list)
         return True
     return _execute_with_retry(_add) is True
@@ -337,7 +343,49 @@ class SettingModel:
         if "site_title" not in curr: add_row(TABLE_SETTINGS, ["site_title", "المنصة", "", user, ""])
 
 # ==========================================
-# 4. أدوات النظام (UI & Auth Helpers)
+# 4. موديل التعليقات (Google Sheets Version)
+# ==========================================
+class CommentModel:
+    """
+    تم تحويل هذا الكلاس ليعمل مع Google Sheets بدلاً من SQLite
+    البيانات المطلوبة في شيت 'comments':
+    comment_id, content_id, user_name, comment_text, created_at
+    """
+    @staticmethod
+    def create_comment(content_id, user_name, comment_text):
+        # إضافة صف جديد للتعليق
+        return add_row(TABLE_COMMENTS, [
+            generate_uuid(), 
+            str(content_id), 
+            user_name, 
+            comment_text, 
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ])
+
+    @staticmethod
+    def get_comments_by_content(content_id):
+        # جلب كل التعليقات
+        df = get_data(TABLE_COMMENTS)
+        if df.empty:
+            return []
+        
+        # فلترة حسب المحتوى
+        # تأكدنا من تحويل content_id إلى نص للمقارنة الصحيحة
+        filtered_df = df[df['content_id'].astype(str) == str(content_id)]
+        
+        # الترتيب حسب التاريخ (اختياري)
+        if not filtered_df.empty and 'created_at' in filtered_df.columns:
+            filtered_df = filtered_df.sort_values('created_at')
+            
+        # إرجاع قائمة من القواميس (Dicts) ليتوافق مع كود الواجهة
+        return filtered_df.to_dict('records')
+
+    @staticmethod
+    def delete_comment(comment_id):
+        return delete_row(TABLE_COMMENTS, "comment_id", comment_id)
+
+# ==========================================
+# 5. أدوات النظام (UI & Auth Helpers)
 # ==========================================
 
 def get_current_user():
@@ -406,52 +454,3 @@ def render_sidebar():
 def render_social_media(link):
     if "youtube" in link: st.video(link)
     else: st.markdown(f"🔗 [رابط]({link})")
-
-
-
-
-
-
-# ==========================================
-# أضف هذا الكود داخل ملف backend.py
-# ==========================================
-
-# 1. أولاً: تأكد من إنشاء جدول التعليقات في دالة init_db أو نفذ هذا الأمر في قاعدة البيانات
-# CREATE TABLE IF NOT EXISTS comments (
-#     comment_id INTEGER PRIMARY KEY AUTOINCREMENT,
-#     content_id INTEGER,
-#     user_name TEXT,
-#     comment_text TEXT,
-#     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-#     FOREIGN KEY(content_id) REFERENCES contents(content_id)
-# );
-
-# 2. ثانياً: أضف كلاس التعامل مع التعليقات
-class CommentModel:
-    @staticmethod
-    def create_comment(content_id, user_name, comment_text):
-        with get_db_connection() as conn: # تأكد أن دالة الاتصال لديك اسمها هكذا
-            cursor = conn.cursor()
-            cursor.execute(
-                "INSERT INTO comments (content_id, user_name, comment_text) VALUES (?, ?, ?)",
-                (content_id, user_name, comment_text)
-            )
-            conn.commit()
-
-    @staticmethod
-    def get_comments_by_content(content_id):
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT comment_id, user_name, comment_text, created_at FROM comments WHERE content_id = ? ORDER BY created_at ASC",
-                (content_id,)
-            )
-            columns = [col[0] for col in cursor.description]
-            return [dict(zip(columns, row)) for row in cursor.fetchall()]
-
-    @staticmethod
-    def delete_comment(comment_id):
-        with get_db_connection() as conn:
-            cursor = conn.cursor()
-            cursor.execute("DELETE FROM comments WHERE comment_id = ?", (comment_id,))
-            conn.commit()
