@@ -12,7 +12,7 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 from gspread.exceptions import APIError, WorksheetNotFound
-from streamlit_option_menu import option_menu
+
 
 # ==========================================
 # 0. تحديد المسار الأساسي (FIX)
@@ -496,3 +496,23 @@ def apply_custom_style():
     """, unsafe_allow_html=True)
 
 
+def render_sidebar():
+    user = get_current_user()
+    
+    # نستخدم الشريط الجانبي لعرض معلومات المستخدم وزر الخروج فقط
+    with st.sidebar:
+        if user:
+            # عرض بيانات المستخدم
+            st.info(f"👤 {user.name}\n\n🏷️ {user.role_name}")
+        
+        # (تم حذف القائمة المخصصة وأكواد التوجيه بالكامل)
+        
+        st.divider()
+        
+        # زر تسجيل الخروج
+        if st.button("تسجيل خروج", type="primary", use_container_width=True):
+            logout_procedure()
+
+def render_social_media(link):
+    if "youtube" in link: st.video(link)
+    else: st.markdown(f"🔗 [رابط]({link})")
