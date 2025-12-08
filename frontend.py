@@ -9,7 +9,6 @@ from backend import (
     ROLE_SUPER_ADMIN, ROLE_ADMIN, ROLE_NAMES
 )
 
-# ==========================================
 # 1. التنسيق (Styling)
 # ==========================================
 def apply_custom_style():
@@ -21,19 +20,37 @@ def apply_custom_style():
     .stApp { direction: rtl; text-align: right; }
     h1, h2, h3, h4, h5, h6, p, div, label, .stMarkdown { text-align: right !important; }
     
-    /* --- حل مشكلة الشريط الجانبي في الجوال --- */
-    /* إخفاء حاوية الشريط الجانبي بالكامل */
-    section[data-testid="stSidebar"] { display: none !important; width: 0px !important; }
-    /* إخفاء زر التحكم (السهم) الذي يظهر لفتح الشريط الجانبي */
-    [data-testid="collapsedControl"] { display: none !important; }
-    /* إخفاء شريط التنقل الافتراضي */
-    div[data-testid="stSidebarNav"] { display: none !important; }
-    /* --------------------------------------- */
-
-    section.main > div { max-width: 100% !important; padding-top: 1rem; }
-    div[data-testid="column"] button { width: 100%; }
+    /* ---------------------------------------------------- */
+    /* 🔥 الحل الجذري لإخفاء الشريط الجانبي والأسهم 🔥 */
+    /* ---------------------------------------------------- */
     
-    /* إخفاء القوائم العلوية الافتراضية لستريم ليت */
+    /* 1. إخفاء حاوية الشريط الجانبي بالكامل */
+    section[data-testid="stSidebar"] {
+        display: none !important;
+        visibility: hidden !important;
+        width: 0px !important;
+    }
+    
+    /* 2. إخفاء زر التحكم (السهم > أو <) الموجود في الزاوية العلوية */
+    [data-testid="collapsedControl"] {
+        display: none !important;
+        visibility: hidden !important;
+    }
+    
+    /* 3. إخفاء أيقونة القائمة (الهمبرغر) في الأعلى إذا رغبت */
+    /* [data-testid="stToolbar"] { visibility: hidden !important; } */
+
+    /* 4. إجبار المحتوى الرئيسي على أخذ كامل العرض */
+    section.main > div { 
+        max-width: 100% !important; 
+        padding-top: 1rem;
+        margin-right: 0px !important; /* ضمان عدم وجود هامش يمين */
+        margin-left: 0px !important;
+    }
+    
+    /* ---------------------------------------------------- */
+
+    div[data-testid="column"] button { width: 100%; }
     #MainMenu, footer, header { visibility: hidden; }
     
     div[data-testid="stVerticalBlock"] > div[style*="border"] { border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
@@ -44,6 +61,9 @@ def apply_custom_style():
         h1 { font-size: 1.8rem !important; }
         .stButton button { width: 100% !important; border-radius: 12px !important; padding: 0.5rem !important; }
         div[data-testid="stDataFrame"] { width: 100% !important; overflow-x: auto !important; }
+        
+        /* إصلاح إضافي للجوال: إزالة الهوامش الجانبية التي يسببها الشريط المخفي */
+        .stApp > header { display: none !important; }
     }
     
     .stTabs [data-baseweb="tab"] { height: 50px; background-color: #f0f2f6; border-radius: 8px; font-weight: 600; }
