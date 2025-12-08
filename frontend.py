@@ -10,44 +10,32 @@ from backend import (
 )
 
 # ==========================================
-# ==========================================
 # 1. التنسيق (Styling)
 # ==========================================
 def apply_custom_style():
     style = """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap');
-    
-    /* 1. الخطوط والاتجاه العام */
+    @import url('[https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap](https://fonts.googleapis.com/css2?family=Cairo:wght@300;400;600;700&display=swap)');
     html, body, [class*="css"] { font-family: 'Cairo', sans-serif !important; }
     .stApp { direction: rtl; text-align: right; }
+    h1, h2, h3, h4, h5, h6, p, div, label, .stMarkdown { text-align: right !important; }
+    section[data-testid="stSidebar"] { display: none; }
+    section.main > div { max-width: 100% !important; padding-top: 1rem; }
+    div[data-testid="column"] button { width: 100%; }
+    #MainMenu, footer, header { visibility: hidden; }
+    div[data-testid="stVerticalBlock"] > div[style*="border"] { border-radius: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); }
+    button { font-family: 'Cairo', sans-serif !important; font-weight: 600 !important; }
     
-    /* 2. ضبط الشريط الجانبي الأصلي (الحل السلمي) */
-    section[data-testid="stSidebar"] > div {
-        direction: rtl; /* ضمان أن المحتوى داخل الشريط عربي */
-        text-align: right;
-        padding-left: 15px !important;  /* هام جداً: يمنع النص من الانقطاع يساراً */
-        padding-right: 10px !important;
+    @media only screen and (max-width: 768px) {
+        .block-container { padding: 3rem 1rem 2rem 1rem !important; }
+        h1 { font-size: 1.8rem !important; }
+        .stButton button { width: 100% !important; border-radius: 12px !important; padding: 0.5rem !important; }
+        div[data-testid="stDataFrame"] { width: 100% !important; overflow-x: auto !important; }
     }
-    
-    /* تصغير زر إغلاق الشريط الجانبي (X) ليتناسب مع التصميم */
-    button[kind="header"] {
-        float: left !important; /* نقله لليسار */
-    }
-
-    /* 3. تنسيق المحتوى الرئيسي */
-    .block-container {
-        padding-top: 2rem !important;
-        padding-bottom: 2rem !important;
-        max-width: 100% !important;
-    }
-    
-    /* تحسين المظهر العام للعناوين */
-    h1, h2, h3, h4, h5, h6, p, div, label, .stMarkdown, .stButton { text-align: right !important; }
-    
-    /* تحسين التبويبات */
     .stTabs [data-baseweb="tab"] { height: 50px; background-color: #f0f2f6; border-radius: 8px; font-weight: 600; }
     .stTabs [aria-selected="true"] { background-color: #ff4b4b !important; color: white !important; }
+    div[role="radiogroup"] > label { background: #ffffff; padding: 10px; border-radius: 8px; border: 1px solid #eee; }
+    div[role="radiogroup"] > label:hover { background: #f9f9f9; }
     </style>
     """
     st.markdown(style, unsafe_allow_html=True)
