@@ -110,51 +110,11 @@ def render_media_page():
     st.header("📂 مكتبة الوسائط والملفات")
     st.markdown("---")
 
-    tabs = st.tabs(["⬆️ رفع ملف جديد", "🖼️ استعراض المكتبة"])
+    # [تعديل] تغيير الترتيب: الاستعراض أولاً ثم الرفع
+    tabs = st.tabs(["🖼️ استعراض المكتبة", "⬆️ رفع ملف جديد"])
 
+    # التبويب الأول: الاستعراض
     with tabs[0]:
-        st.subheader("رفع ملفات إلى Google Drive")
-        with st.container(border=True):
-            uploaded_file = st.file_uploader(
-                "اختر ملفاً للرفع (صور، فيديو، مستندات)", 
-                type=['png', 'jpg', 'jpeg', 'pdf', 'mp4', 'docx', 'xlsx'],
-                accept_multiple_files=False
-            )
-
-            if uploaded_file is not None:
-                file_details = {
-                    "اسم الملف": uploaded_file.name,
-                    "النوع": uploaded_file.type,
-                    "الحجم": f"{uploaded_file.size / 1024:.2f} KB"
-                }
-                st.json(file_details)
-                
-                if st.button("🚀 بدء الرفع", use_container_width=True):
-                    with st.status("جارٍ معالجة الملف...", expanded=True) as status:
-                        st.write("1️⃣ الاتصال بـ Google Drive...")
-                        drive_file_id, web_view_link = bk.upload_file_to_cloud(
-                            uploaded_file, 
-                            uploaded_file.name, 
-                            uploaded_file.type
-                        )
-                        
-                        if drive_file_id:
-                            st.write("2️⃣ حفظ البيانات في النظام...")
-                            MediaModel.add_media(
-                                name=uploaded_file.name,
-                                mtype=uploaded_file.type,
-                                drive_id=drive_file_id,
-                                by=user.name
-                            )
-                            status.update(label="✅ تم الرفع بنجاح!", state="complete", expanded=False)
-                            st.success(f"تم رفع الملف: {uploaded_file.name}")
-                            clear_media_cache()
-                            time.sleep(1)
-                            st.rerun()
-                        else:
-                            status.update(label="❌ فشل الرفع!", state="error")
-
-    with tabs[1]:
         st.subheader("الأرشيف")
         c_filter, c_refresh = st.columns([6, 1])
         with c_refresh:
@@ -202,6 +162,49 @@ def render_media_page():
                             st.link_button("🔗 فتح في Drive", drive_link, use_container_width=True)
                         else:
                             st.caption("الرابط غير متوفر")
+
+    # التبويب الثاني: الرفع
+    with tabs[1]:
+        st.subheader("رفع ملفات إلى Google Drive")
+        with st.container(border=True):
+            uploaded_file = st.file_uploader(
+                "اختر ملفاً للرفع (صور، فيديو، مستندات)", 
+                type=['png', 'jpg', 'jpeg', 'pdf', 'mp4', 'docx', 'xlsx'],
+                accept_multiple_files=False
+            )
+
+            if uploaded_file is not None:
+                file_details = {
+                    "اسم الملف": uploaded_file.name,
+                    "النوع": uploaded_file.type,
+                    "الحجم": f"{uploaded_file.size / 1024:.2f} KB"
+                }
+                st.json(file_details)
+                
+                if st.button("🚀 بدء الرفع", use_container_width=True):
+                    with st.status("جارٍ معالجة الملف...", expanded=True) as status:
+                        st.write("1️⃣ الاتصال بـ Google Drive...")
+                        drive_file_id, web_view_link = bk.upload_file_to_cloud(
+                            uploaded_file, 
+                            uploaded_file.name, 
+                            uploaded_file.type
+                        )
+                        
+                        if drive_file_id:
+                            st.write("2️⃣ حفظ البيانات في النظام...")
+                            MediaModel.add_media(
+                                name=uploaded_file.name,
+                                mtype=uploaded_file.type,
+                                drive_id=drive_file_id,
+                                by=user.name
+                            )
+                            status.update(label="✅ تم الرفع بنجاح!", state="complete", expanded=False)
+                            st.success(f"تم رفع الملف: {uploaded_file.name}")
+                            clear_media_cache()
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            status.update(label="❌ فشل الرفع!", state="error")
 
 
 def render_forms_page():
@@ -459,14 +462,17 @@ def render_reports_page():
 # 4. التنفيذ الرئيسي (Main Interface)
 # ==========================================
 
-# إنشاء التبويبات العلوية
-main_tabs = st.tabs(["🖼️ مكتبة الوسائط", "☑️ النماذج والقوائم", "📊 التقارير والإحصائيات"])
+# [تعديل] ترتيب التبويبات: النماذج أولاً، ثم الوسائط، ثم التقارير
+main_tabs = st.tabs(["☑️ النماذج والقوائم", "🖼️ مكتبة الوسائط", "📊 التقارير والإحصائيات"])
 
+# 1. النماذج أولاً
 with main_tabs[0]:
-    render_media_page()
-
-with main_tabs[1]:
     render_forms_page()
 
+# 2. الوسائط ثانياً
+with main_tabs[1]:
+    render_media_page()
+
+# 3. التقارير ثالثاً
 with main_tabs[2]:
     render_reports_page()
