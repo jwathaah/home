@@ -216,7 +216,7 @@ def render_forms_page():
 
     all_items = get_cached_checklists()
 
-    # --- 1. تنظيم البيانات في هيكلية شجرية (رئيسي -> فرعي -> بنود) ---
+    # --- 1. تنظيم البيانات في هيكلية شجرية ---
     grouped_data = {}
     if all_items:
         for item in all_items:
@@ -232,8 +232,7 @@ def render_forms_page():
 
     st.header("📋 قوائم المهام والنماذج")
     
-    # --- إصلاح مشكلة إنشاء القسم الرئيسي ---
-    # إضافة قسم جديد تعني إضافة بند افتراضي لضمان حفظه في قاعدة البيانات
+    # نموذج إضافة قسم رئيسي
     if is_admin:
         with st.expander("🛠️ إضافة قسم رئيسي جديد للنظام"):
             with st.form("add_new_main_section_form"):
@@ -264,10 +263,11 @@ def render_forms_page():
 
         for i, main_title in enumerate(main_titles):
             with main_tabs[i]:
-                # --- 3. عرض التبويبات الفرعية داخل كل قسم رئيسي ---
+                # --- 3. عرض التبويبات الفرعية ---
                 sub_dict = grouped_data[main_title]
                 sub_titles = sorted(sub_dict.keys())
                 
+                # استخدام tabs للأقسام الفرعية
                 if sub_titles:
                     sub_tabs = st.tabs(sub_titles)
                     for j, sub_title in enumerate(sub_titles):
@@ -300,7 +300,6 @@ def render_forms_page():
                                             toggle_item_status(item.item_id, True)
                                             st.rerun()
                                     with c2:
-                                        # تم تعديل CSS لإزالة الخط (text-decoration: none)
                                         st.markdown(
                                             f"""
                                             <div style="
@@ -327,7 +326,7 @@ def render_forms_page():
                                                 time.sleep(0.5)
                                                 st.rerun()
                             
-                            # --- 4. نموذج الإضافة المباشرة داخل كل قسم فرعي ---
+                            # --- 4. إضافة بند داخل هذا القسم الفرعي ---
                             if is_admin:
                                 st.markdown("---")
                                 with st.expander(f"➕ إضافة بند جديد في: {sub_title}", expanded=False):
@@ -348,6 +347,30 @@ def render_forms_page():
                                                 st.rerun()
                                             else:
                                                 st.warning("يرجى كتابة نص المهمة")
+
+                # --- 5. زر جديد: إضافة قسم فرعي جديد داخل هذا القسم الرئيسي ---
+                if is_admin:
+                    st.divider()
+                    with st.expander(f"📂 إضافة تبويب فرعي جديد داخل '{main_title}'"):
+                        with st.form(f"new_sub_section_form_{i}"):
+                            new_sub_name = st.text_input("اسم التبويب الفرعي الجديد")
+                            first_item = st.text_input("اسم أول مهمة (مطلوب لإنشاء التبويب)")
+                            
+                            if st.form_submit_button("إنشاء التبويب الفرعي"):
+                                if new_sub_name and first_item:
+                                    ChecklistModel.add_item(
+                                        main=main_title,
+                                        sub=new_sub_name,
+                                        name=first_item,
+                                        by=user.name
+                                    )
+                                    st.success(f"تم إنشاء التبويب '{new_sub_name}'")
+                                    clear_checklist_cache()
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error("يرجى كتابة اسم التبويب وأول مهمة فيه")
+
 
 def render_reports_page():
     ALLOWED_ROLES = [ROLE_SUPER_ADMIN, ROLE_ADMIN]
