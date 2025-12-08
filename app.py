@@ -28,15 +28,17 @@ def main():
                     else:
                         st.error(msg)
     
-    # --- سيناريو لوحة التحكم (Dashboard) ---
+# --- سيناريو لوحة التحكم (Dashboard) ---
     else:
-        # عرض القائمة الجانبية الموحدة
-        bk.render_sidebar()
+        # 1. عرض الشريط العلوي الجديد (بدلاً من الجانبي)
+        bk.render_header() 
 
-        st.title(f"مرحباً بك، {user.name} 👋")
-        st.caption(f"الصلاحية: {user.role_name}")
-        st.markdown("---")
-
+        # 2. بقية المحتوى كما هو...
+        # (يمكنك حذف الترحيب القديم st.title لأنه موجود الآن في الهيدر، أو تركه حسب رغبتك)
+        # st.title(f"مرحباً بك، {user.name} 👋") <--- يمكن حذف هذا السطر لتجنب التكرار
+        
+        st.markdown("### 📊 نظرة عامة")
+        
         # إحصائيات سريعة
         c1, c2, c3 = st.columns(3)
         c1.metric("📂 الأقسام", len(bk.SectionModel.get_all_sections()))
@@ -48,9 +50,12 @@ def main():
         with qc1:
             if st.button("📂 تصفح الأقسام", use_container_width=True): st.switch_page("pages/01_الاقسام.py")
         with qc2:
-            if st.button("🖼️ رفع ملفات", use_container_width=True): st.switch_page("pages/03_Media_Upload.py")
+            if st.button("🛠️ مهام العمل", use_container_width=True): st.switch_page("pages/05_المهام.py")
         with qc3:
-            if st.button("☑️ المهام والنماذج", use_container_width=True): st.switch_page("pages/04_النماذج.py")
-
+            if st.button("⚙️ الإدارة", use_container_width=True):
+                 if user.role_id in [bk.ROLE_SUPER_ADMIN, bk.ROLE_ADMIN]:
+                     st.switch_page("pages/02_ادارة_النظام.py")
+                 else:
+                     st.warning("غير مصرح")
 if __name__ == "__main__":
     main()
