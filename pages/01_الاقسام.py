@@ -1,7 +1,9 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import time
 import sys
 import os
+import re
 
 # محاولة استيراد محرر النصوص
 try:
@@ -52,42 +54,131 @@ def can_edit_content(section_id=None):
         except: return False
     return False
 
-# دالة ذكية لعرض جميع أنواع الروابط مباشرة (Embed)
+# ==========================================
+# دالة معالجة وعرض الروابط (The Fix)
+# ==========================================
 def smart_embed_link(link):
     if not link: return
+
+    link = link.strip()
     
-    # يوتيوب (العادي والمختصر)
-    if "youtube.com" in link or "youtu.be" in link:
-        st.video(link)
-    
-    # تويتر / X
+    # دالة مساعدة لإنشاء إطار بحجم الجوال
+    def render_mobile_iframe(embed_url, platform_class="generic"):
+        html_code = f"""
+        <style>
+            .video-container {{
+                position: relative;
+                width: 100%;
+                /* نسبة العرض للارتفاع 9:16 (للجوال) - يمكن تعديلها */
+                padding-bottom: 120%; 
+                height: 0;
+                overflow: hidden;
+                border-radius: 12px;
+                background-color: #000;
+                border: 1px solid #ddd;
+            }}
+            .video-container iframe {{
+                position: absolute;
+                top: 0;
+                left: 0;
+                width: 100%;
+                height: 100%;
+                border: 0;
+            }}
+        </style>
+        <div class="video-container {platform_class}">
+            <iframe src="{embed_url}" allowfullscreen allow="autoplay; encrypted-media"></iframe>
+        </div>
+        """
+        # نستخدم height ثابت للـ component ليظهر المحتوى كاملاً
+        components.html(html_code, height=600, scrolling=False)
+
+    # ---------------------------------------
+    # 1. معالجة روابط إنستقرام (Instagram)
+    # ---------------------------------------
+    if "instagram.com" in link:
+        # نحتاج لتحويل الرابط إلى صيغة Embed
+        # مثال: .../reel/xyz/ -> .../reel/xyz/embed/
+        clean_link = link.split("?")[0] # حذف الباراميترات الزائدة
+        if not clean_link.endswith("/"):
+            clean_link += "/"
+        
+        if "/embed" not in clean_link:
+            embed_url = clean_link + "embed"
+        else:
+            embed_url = clean_link
+            
+        render_mobile_iframe(embed_url, "instagram")
+
+    # ---------------------------------------
+    # 2. معالجة روابط يوتيوب (Shorts & Regular)
+    # ---------------------------------------
+    elif "youtube.com" in link or "youtu.be" in link:
+        video_id = ""
+        if "youtu.be" in link:
+            video_id = link.split("/")[-1].split("?")[0]
+        elif "shorts" in link:
+            video_id = link.split("shorts/")[-1].split("?")[0]
+        elif "v=" in link:
+            video_id = link.split("v=")[-1].split("&")[0]
+        
+        if video_id:
+            embed_url = f"https://www.youtube.com/embed/{video_id}?autoplay=0&rel=0&playsinline=1"
+            # يوتيوب يعمل جيداً مع st.video لكن لتوحيد الشكل الطولي نستخدم iframe إذا كان شورتس
+            if "shorts" in link:
+                 render_mobile_iframe(embed_url, "youtube-shorts")
+            else:
+                 st.video(link) # الفيديوهات العرضية تبدو أفضل بالمشغل العادي
+
+    # ---------------------------------------
+    # 3. معالجة روابط تيك توك (TikTok)
+    # ---------------------------------------
+    elif "tiktok.com" in link:
+        # تيك توك يحتاج في الغالب إلى معرف الفيديو
+        # هذا حل تقريبي لأن تيك توك يمنع أحياناً التضمين البسيط
+        # نستخدم مكتبة أو iframe مباشر من تيك توك
+        parts = link.split("/video/")
+        if len(parts) > 1:
+            video_id = parts[1].split("?")[0]
+            embed_url = f"https://www.tiktok.com/embed/v2/{video_id}"
+            render_mobile_iframe(embed_url, "tiktok")
+        else:
+            # محاولة عرض الرابط كما هو إذا لم نتمكن من استخراج المعرف
+            st.markdown(f"📺 **[فتح فيديو تيك توك في نافذة جديدة]({link})**")
+
+    # ---------------------------------------
+    # 4. معالجة روابط تويتر / X
+    # ---------------------------------------
     elif "twitter.com" in link or "x.com" in link:
-        # استخدام التضمين عبر iframe لضمان الظهور
-        # نستخرج معرف التغريدة إذا أمكن، أو نعرض الرابط كبديل
         try:
-            tweet_id = link.split("/")[-1].split("?")[0]
-            # مكتبة st.components.v1.html يمكنها تضمين كود تويتر
-            import streamlit.components.v1 as components
             components.html(f"""
-            <blockquote class="twitter-tweet"><a href="{link}"></a></blockquote> 
+            <blockquote class="twitter-tweet" data-media-max-width="560">
+            <a href="{link}"></a>
+            </blockquote> 
             <script async src="https://platform.twitter.com/widgets.js" charset="utf-8"></script>
-            """, height=500)
+            """, height=600, scrolling=True)
         except:
             st.info(f"رابط تغريدة: {link}")
 
-    # تيك توك، إنستقرام، وغيرها (محاولة عرض كـ فيديو أو صفحة)
-    elif any(x in link for x in ["tiktok.com", "instagram.com", "facebook.com"]):
-         # بعض المنصات تمنع العرض المباشر، لذا نضع زر واضح + محاولة iframe
-         st.markdown(f"🎥 **[اضغط هنا لفتح الرابط مباشرة]({link})**")
-         
-    # روابط مباشرة لملفات فيديو/صوت
+    # ---------------------------------------
+    # 5. معالجة سناب شات (Snapchat)
+    # ---------------------------------------
+    elif "snapchat.com" in link:
+        # روابط السناب تحتاج عادةً لزر تضمين خاص، لكن نجرب الـ iframe المباشر
+        render_mobile_iframe(link, "snapchat")
+
+    # ---------------------------------------
+    # 6. روابط مباشرة (ملفات)
+    # ---------------------------------------
     elif link.endswith(('.mp4', '.mov', '.avi', '.mp3', '.wav')):
         if link.endswith(('.mp3', '.wav')):
             st.audio(link)
         else:
             st.video(link)
             
-    # أي رابط آخر
+    # ---------------------------------------
+    # 7. افتراضي
+    # ---------------------------------------
     else:
         st.markdown(f"🔗 [زيارة الرابط]({link})")
 
@@ -159,10 +250,6 @@ else:
                                 bk.TabModel.create_tab(current_section.section_id, tn, user.name)
                                 st.rerun()
             else:
-                # تحويل الأقسام الفرعية إلى تبويبات (Pills أو Radio أو Tabs)
-                # نستخدم st.pills (إذا كانت النسخة تدعمه) أو st.radio أفقي لجمالية أكثر
-                # سأستخدم st.tabs مرة أخرى لضمان التنظيم
-                
                 sub_tab_names = [t.name for t in sub_tabs_data]
                 if can_edit_structure():
                     sub_tab_names.append("➕ إضافة فرعي")
@@ -234,7 +321,8 @@ else:
                                                 else:
                                                     ct_body = st.text_area("المحتوى", key=f"a_{current_cat.category_id}")
                                                 
-                                                social_link = st.text_input("رابط فيديو/تغريدة (يظهر مباشرة)")
+                                                social_link = st.text_input("رابط (انستقرام، تيك توك، يوتيوب، سناب...)")
+                                                st.caption("سيتم تكبير الفيديو تلقائياً ليناسب الجوال.")
                                                 
                                                 if st.form_submit_button("نشر"):
                                                     if ct_title:
@@ -264,7 +352,7 @@ else:
                                                 if item.body:
                                                     st.markdown(item.body, unsafe_allow_html=True)
                                                 
-                                                # الرابط الذكي
+                                                # الرابط الذكي (الفيديو)
                                                 if item.social_link:
                                                     st.divider()
                                                     smart_embed_link(item.social_link)
