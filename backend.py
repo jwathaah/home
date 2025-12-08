@@ -5,13 +5,21 @@ import json
 import time
 import uuid
 import hashlib
-import io  # ضروري للصور
+import io
+import os  # ضروري جداً لتحديد المسارات
 from datetime import datetime, timedelta
 from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload 
+from googleapiclient.http import MediaIoBaseUpload, MediaIoBaseDownload
 from gspread.exceptions import APIError, WorksheetNotFound
 from streamlit_option_menu import option_menu
+
+# ==========================================
+# 0. تحديد المسار الأساسي (FIX)
+# ==========================================
+# هذا السطر يضمن أننا نعرف مكان هذا الملف (backend.py)
+# وبالتالي نستطيع العثور على ملف المفاتيح حتى لو تم استدعاؤنا من داخل مجلد pages
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # ==========================================
 # 1. الثوابت (Constants)
@@ -54,25 +62,39 @@ SCOPES = [
 ]
 
 def _get_creds_object():
-    """تجهيز بيانات الاعتماد"""
-    try:
-        if "google" not in st.secrets: return None
-        
-        # دعم قراءة JSON كـ String أو Dict
-        if "service_account_json" in st.secrets["google"]:
-            creds_data = st.secrets["google"]["service_account_json"]
-            creds_dict = json.loads(creds_data) if isinstance(creds_data, str) else creds_data
-        elif "service_account" in st.secrets["google"]:
-            creds_dict = dict(st.secrets["google"]["service_account"])
-        else:
+    """تجهيز بيانات الاعتماد - تم تحسينها لتعمل محلياً وعلى السيرفر"""
+    
+    # 1. المحاولة الأولى: عن طريق st.secrets (للاستخدام في Streamlit Cloud)
+    if "google" in st.secrets:
+        try:
+            if "service_account_json" in st.secrets["google"]:
+                creds_data = st.secrets["google"]["service_account_json"]
+                creds_dict = json.loads(creds_data) if isinstance(creds_data, str) else creds_data
+            elif "service_account" in st.secrets["google"]:
+                creds_dict = dict(st.secrets["google"]["service_account"])
+            else:
+                creds_dict = None
+
+            if creds_dict:
+                if "private_key" in creds_dict:
+                    creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
+                return Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+        except Exception as e:
+            print(f"Error loading from secrets: {e}")
+
+    # 2. المحاولة الثانية: عن طريق ملف JSON محلي (للاستخدام المحلي Localhost)
+    # يبحث عن الملف بجانب backend.py مباشرة
+    json_path = os.path.join(BASE_DIR, 'service_account.json')
+    if os.path.exists(json_path):
+        try:
+            return Credentials.from_service_account_file(json_path, scopes=SCOPES)
+        except Exception as e:
+            st.error(f"خطأ في قراءة ملف المفاتيح المحلي: {e}")
             return None
-        
-        # إصلاح مشاكل التشفير في private_key
-        if "private_key" in creds_dict:
-            creds_dict["private_key"] = creds_dict["private_key"].replace("\\n", "\n")
-        
-        return Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-    except: return None
+
+    # إذا فشل كل شيء
+    st.error("⚠️ لم يتم العثور على إعدادات الاتصال (secrets or service_account.json)")
+    return None
 
 @st.cache_resource(ttl=600)
 def get_connection():
@@ -97,29 +119,41 @@ def get_data(sheet_name):
     if not client: return pd.DataFrame()
     def _fetch():
         try:
-            sh = client.open_by_key(st.secrets["google"]["spreadsheet_id"])
+            # محاولة جلب الآيدي من الأسرار، أو وضعه مباشرة هنا إذا كنت تعمل محلياً فقط
+            sheet_id = st.secrets["google"].get("spreadsheet_id")
+            if not sheet_id:
+                # Fallback: إذا لم يكن في الأسرار، ربما يكون معرفاً كمتغير بيئة أو ثابت
+                # يمكنك وضع الآيدي هنا كنص مباشرة للاختبار إذا لزم الأمر
+                pass 
+            
+            if not sheet_id:
+                 return pd.DataFrame()
+
+            sh = client.open_by_key(sheet_id)
             ws = sh.worksheet(sheet_name)
             data = ws.get_all_records()
             return pd.DataFrame(data)
         except WorksheetNotFound: return pd.DataFrame()
-        except gspread.exceptions.GSpreadException: return pd.DataFrame() # في حال كان الشيت فارغاً تماماً
+        except gspread.exceptions.GSpreadException: return pd.DataFrame() 
+        except Exception as e: 
+            print(f"Error fetching data: {e}")
+            return pd.DataFrame()
+
     res = _execute_with_retry(_fetch)
     return res if res is not None else pd.DataFrame()
 
 def add_row(sheet_name, row_data_list, new_sheet_headers=None):
-    """
-    إضافة صف، مع ميزة إنشاء الشيت وإضافة العناوين إذا لم يكن موجوداً
-    """
     client = get_connection()
     if not client: return False
     def _add():
-        sh = client.open_by_key(st.secrets["google"]["spreadsheet_id"])
+        sheet_id = st.secrets["google"].get("spreadsheet_id")
+        if not sheet_id: return False
+
+        sh = client.open_by_key(sheet_id)
         try: 
             ws = sh.worksheet(sheet_name)
         except WorksheetNotFound: 
-            # إنشاء الورقة إذا لم تكن موجودة
             ws = sh.add_worksheet(title=sheet_name, rows=100, cols=20)
-            # إذا تم تمرير عناوين (headers)، أضفها كأول صف
             if new_sheet_headers:
                 ws.append_row(new_sheet_headers)
         
@@ -131,7 +165,8 @@ def delete_row(sheet_name, id_column, id_value):
     client = get_connection()
     if not client: return False
     def _del():
-        sh = client.open_by_key(st.secrets["google"]["spreadsheet_id"])
+        sheet_id = st.secrets["google"].get("spreadsheet_id")
+        sh = client.open_by_key(sheet_id)
         ws = sh.worksheet(sheet_name)
         cell = ws.find(str(id_value))
         if cell: ws.delete_rows(cell.row); return True
@@ -142,7 +177,8 @@ def update_field(sheet_name, id_column, id_value, target_column, new_value):
     client = get_connection()
     if not client: return False
     def _upd():
-        sh = client.open_by_key(st.secrets["google"]["spreadsheet_id"])
+        sheet_id = st.secrets["google"].get("spreadsheet_id")
+        sh = client.open_by_key(sheet_id)
         ws = sh.worksheet(sheet_name)
         cell = ws.find(str(id_value))
         if not cell: return False
@@ -161,6 +197,10 @@ def upload_file_to_cloud(file_obj, filename, mime_type):
     if not creds: return None, None
     try:
         fid = st.secrets["google"].get("drive_folder_id")
+        if not fid:
+            st.error("لم يتم تحديد drive_folder_id في secrets")
+            return None, None
+
         service = build('drive', 'v3', credentials=creds)
         
         safe_name = f"{datetime.now().strftime('%Y%m%d_%H%M%S')}_{filename}"
@@ -234,7 +274,6 @@ class UserModel:
     def create_user(name, email, password, role_id):
         if UserModel.get_user_by_email(email)[0]: return False, "موجود مسبقاً"
         phash = hashlib.sha256(str.encode(password)).hexdigest()
-        # هنا نرسل العناوين في حال كان الجدول غير موجود
         headers = ['user_id', 'name', 'email', 'password_hash', 'role_id', 'status', 'created_at']
         if add_row(TABLE_USERS, [generate_uuid(), name, email, phash, role_id, STATUS_ACTIVE, datetime.now().strftime("%Y-%m-%d")], new_sheet_headers=headers):
             return True, "تم"
@@ -360,14 +399,12 @@ class SettingModel:
             add_row(TABLE_SETTINGS, ["site_title", "المنصة", "", user, ""], new_sheet_headers=['setting_key', 'setting_value', 'description', 'updated_by', 'updated_at'])
 
 # ==========================================
-# 4. موديل التعليقات (Google Sheets Version) - تم التصحيح
+# 4. موديل التعليقات
 # ==========================================
 class CommentModel:
     @staticmethod
     def create_comment(content_id, user_name, comment_text):
-        # أهم نقطة: تعريف العناوين لتضاف إذا كان الشيت جديداً
         headers = ['comment_id', 'content_id', 'user_name', 'comment_text', 'created_at']
-        
         return add_row(TABLE_COMMENTS, [
             generate_uuid(), 
             str(content_id), 
@@ -379,13 +416,10 @@ class CommentModel:
     @staticmethod
     def get_comments_by_content(content_id):
         df = get_data(TABLE_COMMENTS)
-        if df.empty:
-            return []
+        if df.empty: return []
         
-        # التأكد من وجود العناوين المطلوبة لتجنب KeyError
         required_cols = ['content_id', 'user_name', 'comment_text', 'created_at']
         if not all(col in df.columns for col in required_cols):
-            # إذا لم تكن العناوين موجودة، يعني أن الجدول معطوب (البيانات أصبحت عناوين)
             return []
 
         filtered_df = df[df['content_id'].astype(str) == str(content_id)]
@@ -446,13 +480,16 @@ def render_sidebar():
             styles={"nav-link": {"font-size": "14px", "text-align": "right"}}
         )
         
+        # تم تعديل الروابط لتعمل مع ملف المهام المدمج
         if selected == "الرئيسية":
             if st.button("🏠 الذهاب للرئيسية", use_container_width=True): st.switch_page("app.py")
         elif selected == "الأقسام": st.switch_page("pages/01_الاقسام.py")
-        elif selected == "المكتبة": st.switch_page("pages/03_Media_Upload.py")
-        elif selected == "النماذج": st.switch_page("pages/04_النماذج.py")
+        elif selected == "المكتبة": 
+            # بما أننا دمجنا الملفات، نوجه لملف المهام (الذي يحتوي المكتبة الآن)
+            st.switch_page("pages/05_المهام.py") 
+        elif selected == "النماذج": st.switch_page("pages/05_المهام.py")
         elif selected == "التقارير":
-            if user and user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]: st.switch_page("pages/05_التقارير.py")
+            if user and user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]: st.switch_page("pages/05_المهام.py")
             else: st.warning("للمدراء فقط")
         elif selected == "الإدارة":
             if user and user.role_id in [ROLE_SUPER_ADMIN, ROLE_ADMIN]: st.switch_page("pages/02_ادارة_النظام.py")
