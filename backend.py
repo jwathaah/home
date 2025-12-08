@@ -406,3 +406,52 @@ def render_sidebar():
 def render_social_media(link):
     if "youtube" in link: st.video(link)
     else: st.markdown(f"🔗 [رابط]({link})")
+
+
+
+
+
+
+# ==========================================
+# أضف هذا الكود داخل ملف backend.py
+# ==========================================
+
+# 1. أولاً: تأكد من إنشاء جدول التعليقات في دالة init_db أو نفذ هذا الأمر في قاعدة البيانات
+# CREATE TABLE IF NOT EXISTS comments (
+#     comment_id INTEGER PRIMARY KEY AUTOINCREMENT,
+#     content_id INTEGER,
+#     user_name TEXT,
+#     comment_text TEXT,
+#     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+#     FOREIGN KEY(content_id) REFERENCES contents(content_id)
+# );
+
+# 2. ثانياً: أضف كلاس التعامل مع التعليقات
+class CommentModel:
+    @staticmethod
+    def create_comment(content_id, user_name, comment_text):
+        with get_db_connection() as conn: # تأكد أن دالة الاتصال لديك اسمها هكذا
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO comments (content_id, user_name, comment_text) VALUES (?, ?, ?)",
+                (content_id, user_name, comment_text)
+            )
+            conn.commit()
+
+    @staticmethod
+    def get_comments_by_content(content_id):
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT comment_id, user_name, comment_text, created_at FROM comments WHERE content_id = ? ORDER BY created_at ASC",
+                (content_id,)
+            )
+            columns = [col[0] for col in cursor.description]
+            return [dict(zip(columns, row)) for row in cursor.fetchall()]
+
+    @staticmethod
+    def delete_comment(comment_id):
+        with get_db_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("DELETE FROM comments WHERE comment_id = ?", (comment_id,))
+            conn.commit()
