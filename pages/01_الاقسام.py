@@ -155,7 +155,7 @@ def smart_embed_link(link):
 # 4. واجهة المستخدم
 # ==========================================
 
-bk.render_sidebar()
+bk.render_header()
 st.title("📂 تصفح الأقسام والمحتوى")
 
 sections = bk.SectionModel.get_all_sections()
