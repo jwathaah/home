@@ -40,7 +40,7 @@ if user.role_id not in ALLOWED_ROLES:
     st.switch_page("app.py")
 
 # عرض القائمة الجانبية الموحدة
-bk.render_sidebar()
+bk.render_header()
 
 st.title("🛠️ لوحة التحكم وإدارة النظام")
 
