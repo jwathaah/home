@@ -2,12 +2,12 @@ import streamlit as st
 import time
 
 # الرابط المراد التحويل إليه
-url = "https://script.google.com/macros/s/AKfycbxgbwEG71vZqLUwmtbb9nkChdD9bxGj8MBTNEuICjfoDEAPyXKCOLdWSTQOX-VtAzN8/exec"
+url = "https://script.google.com/macros/s/AKfycbzohEcyBXZZ-jUWTUYzDdKwfeA89ZCawAFUvKycBcKRR9e3rJUd3_sSWBokk3nIoR1j/exec"
 
-st.write("سيتم تحويلك بعد ثانيتين...")
+st.write("سيتم تحويلك بعد ثانية...")
 
 # الانتظار
-time.sleep(2)
+time.sleep(1)
 
 # التحويل
 st.markdown(f"""
