@@ -31,7 +31,7 @@ with col2:
     st.markdown("### 🏡 المنزل الذكي")
     st.link_button(
         "الدخول",
-        "https://script.google.com/a/macros/jwatha.com/s/AKfycbwxGt6WJSUtTwwl0Nfl4_ry39ULIlAt9N8Ydj7scic4jx8ssIjbT_GcKWzZXuyTS_Kz/exec",
+        "https://script.google.com/macros/s/AKfycbwmyBe53Xhw5RuJxL60k7nE3BXb2wsYSVqCEO4jaeo_Xjt0mMMsM0IwO_xvgkizOaTO/exec",
         use_container_width=True
     )
 
