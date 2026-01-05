@@ -16,7 +16,7 @@ st.markdown(
 
 st.markdown("---")
 
-# 4 مربعات
+# الصف الأول (4 مربعات)
 col1, col2, col3, col4 = st.columns(4)
 
 with col1:
@@ -48,5 +48,26 @@ with col4:
     st.link_button(
         "الدخول",
         "https://joghaiman.streamlit.app/%D8%B4%D8%AC%D8%B1%D8%A9_%D8%A7%D9%84%D8%B9%D8%A7%D8%A6%D9%84%D8%A9",
+        use_container_width=True
+    )
+
+st.markdown("---")
+
+# الصف الثاني (مربعين)
+col5, col6 = st.columns(2)
+
+with col5:
+    st.markdown("### 📅 التقويم الدراسي")
+    st.link_button(
+        "الدخول",
+        "https://sites.google.com/jwatha.com/eid",
+        use_container_width=True
+    )
+
+with col6:
+    st.markdown("### 🧮 حاسبة صف أول")
+    st.link_button(
+        "الدخول",
+        "https://sites.google.com/jwatha.com/eid",
         use_container_width=True
     )
