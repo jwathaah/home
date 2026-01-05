@@ -16,8 +16,8 @@ st.markdown(
 
 st.markdown("---")
 
-# الصف الأول (4 مربعات)
-col1, col2, col3, col4 = st.columns(4)
+# الصف الأول (3 مربعات)
+col1, col2, col3 = st.columns(3)
 
 with col1:
     st.markdown("### 📑 بلاغاتي")
@@ -43,6 +43,11 @@ with col3:
         use_container_width=True
     )
 
+st.markdown("---")
+
+# الصف الثاني (2 مربعات)
+col4, col5 = st.columns(2)
+
 with col4:
     st.markdown("### 👪 شجرة الأسرة")
     st.link_button(
@@ -51,21 +56,8 @@ with col4:
         use_container_width=True
     )
 
-st.markdown("---")
-
-# الصف الثاني (مربعين)
-col5, col6 = st.columns(2)
-
 with col5:
-    st.markdown("### 📅 التقويم الدراسي")
-    st.link_button(
-        "الدخول",
-        "https://sites.google.com/jwatha.com/eid",
-        use_container_width=True
-    )
-
-with col6:
-    st.markdown("### 🧮 حاسبة صف أول")
+    st.markdown("### 📅 التقويم الدراسي + 🧮 حاسبة صف أول")
     st.link_button(
         "الدخول",
         "https://sites.google.com/jwatha.com/eid",
