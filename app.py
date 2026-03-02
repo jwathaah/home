@@ -4,62 +4,87 @@ import streamlit as st
 st.set_page_config(
     page_title="المنصة المركزية",
     page_icon="🏠",
-    layout="wide"
+    layout="centered"
 )
 
-# عنوان الصفحة
-st.markdown(
-    "<h1 style='text-align:center;'>🏠 المنصة المركزية</h1>"
-    "<p style='text-align:center;'>اختر الخدمة التي تريد الدخول إليها</p>",
-    unsafe_allow_html=True
-)
+# تنسيق CSS للمربعات
+st.markdown("""
+    <style>
+    .card {
+        background-color: #f8f9fa;
+        padding: 20px;
+        border-radius: 15px;
+        margin-bottom: 15px;
+        text-align: center;
+        font-size: 20px;
+        font-weight: bold;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.05);
+        transition: 0.2s;
+    }
+    .card:hover {
+        transform: scale(1.02);
+        box-shadow: 0 6px 15px rgba(0,0,0,0.1);
+    }
+    a {
+        text-decoration: none !important;
+        color: black !important;
+    }
+    </style>
+""", unsafe_allow_html=True)
+
+st.markdown("<h1 style='text-align:center;'>🏠 المنصة المركزية</h1>", unsafe_allow_html=True)
+st.markdown("<p style='text-align:center;'>اختر الخدمة التي تريد الدخول إليها</p>", unsafe_allow_html=True)
 
 st.markdown("---")
 
-# الصف الأول (3 مربعات)
-col1, col2, col3 = st.columns(3)
+# ======== القائمة الرئيسية ========
 
-with col1:
-    st.markdown("### 📑 بلاغاتي")
-    st.link_button(
-        "الدخول",
-        "https://script.google.com/macros/s/AKfycbwgYz-2HGU1Ofo7vt4--ISAZCofFH_Ef9Baxpksqnj_s7cqShX3sy1NMwYJyLGr1zhCGA/exec",
-        use_container_width=True
-    )
+links = [
+    ("📑 بلاغاتي",
+     "https://script.google.com/macros/s/AKfycbwgYz-2HGU1Ofo7vt4--ISAZCofFH_Ef9Baxpksqnj_s7cqShX3sy1NMwYJyLGr1zhCGA/exec"),
 
-with col2:
-    st.markdown("### 🏡 المنزل الذكي")
-    st.link_button(
-        "الدخول",
-        "https://script.google.com/macros/s/AKfycbwmyBe53Xhw5RuJxL60k7nE3BXb2wsYSVqCEO4jaeo_Xjt0mMMsM0IwO_xvgkizOaTO/exec",
-        use_container_width=True
-    )
+    ("📅 التقويم الدراسي",
+     "https://sites.google.com/jwatha.com/eid"),
 
-with col3:
-    st.markdown("### 🍽️ قائمة الطعام")
-    st.link_button(
-        "الدخول",
-        "https://script.google.com/macros/s/AKfycbzJV83UzzjiFLaaWqon3jtTXWXUWEmzbiFN92MhDi50JodQKSK6scgDWpKm5AEXCEfM/exec",
-        use_container_width=True
+    ("🌙 إمساكية ومقارنة رمضان",
+     "https://sites.google.com/jwatha.com/emsak/"),
+
+    ("👪 شجرة الأسرة",
+     "https://joghaiman.streamlit.app/%D8%B4%D8%AC%D8%B1%D8%A9_%D8%A7%D9%84%D8%B9%D8%A7%D8%A6%D9%84%D8%A9"),
+
+    ("📇 معالج جهات الاتصال",
+     "https://sites.google.com/jwatha.com/contact/"),
+
+    ("💬 جهات الاتصال للواتس",
+     "https://sites.google.com/jwatha.com/contacts/"),
+]
+
+for title, link in links:
+    st.markdown(
+        f"<a href='{link}' target='_blank'>"
+        f"<div class='card'>{title}</div>"
+        f"</a>",
+        unsafe_allow_html=True
     )
 
 st.markdown("---")
 
-# الصف الثاني (2 مربعات)
-col4, col5 = st.columns(2)
+# ======== البقية ========
 
-with col4:
-    st.markdown("### 👪 شجرة الأسرة")
-    st.link_button(
-        "الدخول",
-        "https://joghaiman.streamlit.app/%D8%B4%D8%AC%D8%B1%D8%A9_%D8%A7%D9%84%D8%B9%D8%A7%D8%A6%D9%84%D8%A9",
-        use_container_width=True
-    )
+st.markdown("### خدمات أخرى")
 
-with col5:
-    st.markdown("### 📅 التقويم الدراسي + 🧮 حاسبة صف أول")
-    st.link_button(
-        "الدخول",
-        "https://sites.google.com/jwatha.com/eid",
-        use_container_width=True
+other_links = [
+    ("🏡 المنزل الذكي",
+     "https://script.google.com/macros/s/AKfycbwmyBe53Xhw5RuJxL60k7nE3BXb2wsYSVqCEO4jaeo_Xjt0mMMsM0IwO_xvgkizOaTO/exec"),
+
+    ("🍽️ قائمة الطعام",
+     "https://script.google.com/macros/s/AKfycbzJV83UzzjiFLaaWqon3jtTXWXUWEmzbiFN92MhDi50JodQKSK6scgDWpKm5AEXCEfM/exec"),
+]
+
+for title, link in other_links:
+    st.markdown(
+        f"<a href='{link}' target='_blank'>"
+        f"<div class='card'>{title}</div>"
+        f"</a>",
+        unsafe_allow_html=True
     )
