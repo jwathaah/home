@@ -46,7 +46,7 @@ links = [
      "https://sites.google.com/jwatha.com/eid"),
 
     ("🌙 إمساكية ومقارنة رمضان",
-     "https://sites.google.com/jwatha.com/emsak/"),
+     "https://sites.google.com/jwatha.com/emsak?usp=sharing"),
 
     ("👪 شجرة الأسرة",
      "https://joghaiman.streamlit.app/%D8%B4%D8%AC%D8%B1%D8%A9_%D8%A7%D9%84%D8%B9%D8%A7%D8%A6%D9%84%D8%A9"),
