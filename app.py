@@ -2,7 +2,7 @@ import streamlit as st
 
 # إعداد الصفحة
 st.set_page_config(
-    page_title="المنصة المركزية",
+    page_title="اهلا وغلا",
     page_icon="🏠",
     layout="centered"
 )
@@ -32,8 +32,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-st.markdown("<h1 style='text-align:center;'>🏠 المنصة المركزية</h1>", unsafe_allow_html=True)
-st.markdown("<p style='text-align:center;'>اختر الخدمة التي تريد الدخول إليها</p>", unsafe_allow_html=True)
+
 
 st.markdown("---")
 
